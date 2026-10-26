@@ -1,0 +1,186 @@
+<view class="app-shell">
+  <view class="topbar" style="height: {{navTotalHeight}}px; padding-top: {{statusBarHeight}}px;">
+    <view class="nav-row" style="height: {{navBarHeight}}px;">
+      <button class="nav-back" bindtap="handleNavBack" aria-label="返回">
+        <view class="back-chevron"></view>
+      </button>
+      <text class="nav-title">Collector’s Room Vol.2</text>
+    </view>
+  </view>
+
+  <view wx:if="{{view === 'loading'}}" class="page-body loading-page" style="top: {{navTotalHeight}}px;">
+    <image class="loading-art" src="/assets/loading.png" mode="aspectFill"></image>
+  </view>
+
+  <scroll-view
+    wx:elif="{{view === 'main'}}"
+    class="page-body main-scroll"
+    style="top: {{navTotalHeight}}px;"
+    scroll-y
+    scroll-with-animation
+    scroll-top="{{mainScrollTop}}"
+    bindscroll="onMainScroll"
+  >
+    <view class="main-content">
+      <image class="exhibition-art" src="/assets/exhibition.jpg" mode="widthFix"></image>
+
+      <view class="event-intro">
+        <image class="event-title-image" src="/assets/title.png" mode="widthFix"></image>
+        <image class="event-hours-image" src="/assets/hours.png" mode="widthFix"></image>
+      </view>
+
+      <view class="appointment-form">
+        <view class="section-heading">
+          <text class="heading-cn">请填写预约信息</text>
+          <text class="heading-en">APPOINTMENT DETAILS</text>
+        </view>
+
+        <view class="form-field">
+          <view class="field-caption">
+            <text class="field-cn">姓名</text>
+            <text class="field-en">YOUR NAME</text>
+          </view>
+          <input class="field-input" value="{{name}}" data-field="name" bindinput="onInput" maxlength="30" cursor-spacing="24" />
+        </view>
+
+        <view class="form-field">
+          <view class="field-caption">
+            <text class="field-cn">手机号码</text>
+            <text class="field-en">PHONE NUMBER</text>
+          </view>
+          <view class="phone-input-row">
+            <input class="field-input phone-input" value="{{phone}}" data-field="phone" bindinput="onInput" type="number" maxlength="11" cursor-spacing="24" />
+            <button
+              class="phone-auth-button"
+              open-type="getPhoneNumber|agreePrivacyAuthorization"
+              bindgetphonenumber="authorizePhone"
+              bindagreeprivacyauthorization="handleAgreePrivacyAuthorization"
+              loading="{{isAuthorizingPhone}}"
+              disabled="{{isAuthorizingPhone}}"
+            >{{phone ? '重新获取' : '微信授权'}}</button>
+          </view>
+        </view>
+
+        <view class="picker-row">
+          <button class="picker-field" data-picker="date" bindtap="openPicker">
+            <view class="field-caption">
+              <text class="field-cn">选择日期</text>
+              <text class="field-en">DATE</text>
+            </view>
+            <view class="picker-line">
+              <text class="picker-result {{dateText ? 'picker-result--filled' : ''}}">{{dateText}}</text>
+              <view class="down-chevron"></view>
+            </view>
+          </button>
+
+          <button class="picker-field" data-picker="time" bindtap="openPicker">
+            <view class="field-caption">
+              <text class="field-cn">选择时间</text>
+              <text class="field-en">TIME SLOT</text>
+            </view>
+            <view class="picker-line">
+              <text class="picker-result {{selectedTime ? 'picker-result--filled' : ''}}">{{selectedTime}}</text>
+              <view class="down-chevron"></view>
+            </view>
+          </button>
+        </view>
+
+        <button class="consent-row" bindtap="toggleConsent">
+          <view class="checkbox {{consented ? 'checkbox--checked' : ''}}"></view>
+          <text class="consent-copy" user-select="true">
+            ARCHIVISM Gallery Store 仅为活动预约收集并使用您的姓名、手机号码、预约日期及预约时段。我们将在完成预约服务所必需的范围和期限内存储并保护上述信息。勾选即表示您已阅读并同意
+            <text class="privacy-link" catchtap="openPrivacyPolicy">《小程序用户隐私保护指引》</text>。
+          </text>
+        </button>
+
+        <button class="submit-button" bindtap="submitReservation" loading="{{isSubmitting}}" disabled="{{isSubmitting}}">提交</button>
+      </view>
+    </view>
+  </scroll-view>
+
+  <scroll-view wx:elif="{{view === 'date'}}" class="page-body subpage-scroll" style="top: {{navTotalHeight}}px;" scroll-y>
+    <view class="subpage date-page">
+      <view class="subpage-controls">
+        <button class="subpage-back" bindtap="returnToForm" aria-label="返回表单"><view class="thin-chevron"></view></button>
+        <button class="subpage-close" bindtap="returnToForm" aria-label="关闭"><view class="close-icon"></view></button>
+      </view>
+
+      <view class="section-heading subpage-heading">
+        <text class="heading-cn">选择日期</text>
+        <text class="heading-en">PICK A DATE</text>
+      </view>
+
+      <view class="week-row">
+        <text wx:for="{{weekdays}}" wx:key="*this" class="week-label">{{item}}</text>
+      </view>
+
+      <view wx:for="{{months}}" wx:key="label" wx:for-item="month" class="month-block">
+        <text class="month-label">{{month.label}}</text>
+        <view class="date-grid">
+          <button
+            wx:for="{{month.days}}"
+            wx:key="key"
+            wx:for-item="day"
+            class="date-cell {{day.placeholder ? 'date-cell--placeholder' : ''}} {{day.disabled ? 'date-cell--disabled' : ''}} {{draftDateValue === day.value ? 'date-cell--selected' : ''}}"
+            data-value="{{day.value}}"
+            disabled="{{day.placeholder || day.disabled}}"
+            bindtap="selectDate"
+          >{{day.label}}</button>
+        </view>
+      </view>
+
+      <button class="outline-confirm" bindtap="confirmDate">确认</button>
+    </view>
+  </scroll-view>
+
+  <view wx:elif="{{view === 'time'}}" class="page-body subpage-fixed" style="top: {{navTotalHeight}}px;">
+    <view class="subpage time-page">
+      <view class="subpage-controls">
+        <button class="subpage-back" bindtap="returnToForm" aria-label="返回表单"><view class="thin-chevron"></view></button>
+        <button class="subpage-close" bindtap="returnToForm" aria-label="关闭"><view class="close-icon"></view></button>
+      </view>
+
+      <view class="section-heading subpage-heading">
+        <text class="heading-cn">选择时间</text>
+        <text class="heading-en">PICK A TIME</text>
+      </view>
+
+      <view class="time-grid">
+        <button
+          wx:for="{{timeSlots}}"
+          wx:key="value"
+          class="time-cell {{item.disabled ? 'time-cell--disabled' : ''}} {{draftTime === item.value ? 'time-cell--selected' : ''}}"
+          data-value="{{item.value}}"
+          disabled="{{item.disabled}}"
+          bindtap="selectTime"
+        >{{item.value}}</button>
+      </view>
+
+      <button class="outline-confirm time-confirm" bindtap="confirmTime">确认</button>
+    </view>
+  </view>
+
+  <view wx:elif="{{view === 'success'}}" class="page-body success-page" style="top: {{navTotalHeight}}px;">
+    <image class="success-art" src="/assets/success.jpg" mode="aspectFill"></image>
+    <view class="success-overlay">
+      <image class="success-title-image" src="/assets/title.png" mode="widthFix"></image>
+      <view class="success-details">
+        <text>{{dateText}}，{{selectedTime}}</text>
+        <text class="address">上海市静安区文安路30号一楼106室</text>
+      </view>
+      <view class="success-status">
+        <text class="success-cn">预约成功</text>
+        <text class="success-en">VISIT CONFIRMED</text>
+      </view>
+      <button class="cancel-button" bindtap="cancelReservation" loading="{{isCancelling}}" disabled="{{isCancelling}}"><text class="cancel-chevron">〈</text>取消预约</button>
+    </view>
+  </view>
+
+  <view wx:else class="page-body error-page" style="top: {{navTotalHeight}}px;">
+    <view class="error-card">
+      <text class="error-title">预约服务暂不可用</text>
+      <text class="error-message">{{errorMessage}}</text>
+      <button class="retry-button" bindtap="retryInitialize">重新加载</button>
+    </view>
+  </view>
+</view>
