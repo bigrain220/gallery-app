@@ -260,47 +260,19 @@ const definition = {
   },
 
   retryInitialize() {
-    return this.initialize()
+    return this.initialized ? this.refreshHomeBooking() : this.initialize()
   },
 
   async lookupActiveBooking(requestId) {
-    let identityError = null
-    try {
-      const active = await api.getActiveBooking()
-      if (isActiveBooking(active)) return active
-    } catch (error) {
-      identityError = error
-    }
+    const active = await api.getActiveBooking()
     if (this.destroyed || requestId !== this.homeBookingRequestId) return null
-    const reference = localState.getBookingReference()
-    const profile = localState.getProfile()
-    const current = getApp().globalData.reservation
-    const phone = [reference && reference.phone, current && current.phone, profile.phone, this.data.bookingPhone, this.data.phone]
-      .map(value => String(value || '').trim()).find(value => /^1\d{10}$/.test(value))
-    if (reference) {
-      try {
-        const record = await api.getBooking(reference.id, reference.phone)
-        if (this.destroyed || requestId !== this.homeBookingRequestId) return null
-        if (isActiveBooking(record)) return record
-        localState.clearBookingReference(reference.id)
-      } catch (error) {
-        // 详情回查失败时，继续按已保存的手机号查询预约列表。
-      }
-    }
-    if (this.destroyed || requestId !== this.homeBookingRequestId) return null
-    if (phone) {
-      const bookings = await api.listBookings(phone)
-      return bookings.find(isActiveBooking) || null
-    }
-    // 保留旧后端要求 openid 参数时新访客的预约入口；已有本机资料始终回查服务端。
-    if (identityError && !(identityError.statusCode === 400 && /openid/i.test(identityError.message))) throw identityError
-    return null
+    return isActiveBooking(active) ? active : null
   },
 
   async refreshHomeBooking() {
     if (this.pageType !== 'main' || this.destroyed || this.data.isSubmitting) return
     const requestId = this.homeBookingRequestId = (this.homeBookingRequestId || 0) + 1
-    this.setData({ view: 'loading', isCheckingBooking: true, bookingLookupError: '' })
+    this.setData({ view: 'loading', isCheckingBooking: true, bookingLookupError: '', errorMessage: '' })
     try {
       const reservation = await this.lookupActiveBooking(requestId)
       if (this.destroyed || requestId !== this.homeBookingRequestId) return
@@ -552,7 +524,7 @@ const definition = {
       try {
         reservation = await api.getActiveBooking()
       } catch (error) {
-        // 兼容仍要求显式 openid 的后端接口。
+        // 提交结果未知时，继续按本次提交的手机号确认是否已创建。
       }
       if (!reservation || !reservation.canCancel) {
         const reservations = await api.listBookings(phone)

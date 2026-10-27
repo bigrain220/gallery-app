@@ -121,13 +121,13 @@ test('all 8 TF endpoints use the provided container, tenant, methods and payload
   assert.equal((await api.getActivity()).startDate, '2099-12-20')
   await api.getMonthStatus('2099-12')
   await api.getSlots('2099-12-20')
-  const payload = { name: booking.userName, phone: booking.userPhone, date: '2099-12-20', slotId: slots[0].id, openid: 'test-openid' }
+  const payload = { name: booking.userName, phone: booking.userPhone, date: '2099-12-20', slotId: slots[0].id }
   assert.equal(await api.createBooking(payload), booking.id)
   const detail = await api.getBooking(booking.id, booking.userPhone)
   assert.equal(detail.date, '2099-12-20')
   assert.equal(detail.time, '13:00-14:00')
   assert.equal(detail.createTime, '2099-10-27 09:30:00')
-  assert.equal(await api.getActiveBooking('test-openid'), null)
+  assert.equal(await api.getActiveBooking(), null)
   assert.equal((await api.listBookings(booking.userPhone)).length, 1)
   assert.equal(await api.cancelBooking(booking.id, booking.userPhone), true)
   assert.equal(calls.length, 8)
@@ -135,12 +135,14 @@ test('all 8 TF endpoints use the provided container, tenant, methods and payload
     assert.deepEqual(options.config, { env: 'prod-d3giey1bt59348a38' })
     assert.equal(options.header['X-WX-SERVICE'], 'tf')
     assert.equal(options.header['tenant-id'], '1')
+    assert.equal(Object.hasOwn(options.header, 'X-WX-OPENID'), false)
     assert.equal(options.timeout, 15000)
     assert.ok(options.path.startsWith('/app-api/tf/'))
     if (options.method === 'GET') assert.ok(!Object.hasOwn(options, 'data'))
   }
   assert.deepEqual(calls[3].data, payload)
   assert.equal(calls[3].method, 'POST')
+  assert.equal(calls[5].path, '/app-api/tf/booking/get-by-openid')
   assert.deepEqual(calls[7].data, { id: booking.id, phone: booking.userPhone })
   assert.equal(calls[7].method, 'POST')
 })
@@ -211,6 +213,9 @@ test('startup failure shows retry state and can recover', async () => {
   respond = original
   await instance.retryInitialize()
   assert.equal(instance.data.view, 'main')
+  assert.deepEqual(calls.map(options => options.path), [
+    '/app-api/tf/activity/get', '/app-api/tf/activity/get', '/app-api/tf/booking/get-by-openid'
+  ])
 })
 
 test('home waits for booking status and never allows submission while the result is pending', async () => {
@@ -233,14 +238,19 @@ test('home waits for booking status and never allows submission while the result
   assert.equal(pageStack.length, 1)
 })
 
-test('home finds active bookings from saved phone even without a booking reference', async () => {
+test('home trusts an empty identity result even with cached booking, profile and form phone', async () => {
+  storage.set(localState.bookingKey, {id: booking.id, phone: booking.userPhone})
   storage.set(localState.profileKey, {phone: booking.userPhone})
+  app.globalData.reservation = api.normalizeBooking(booking)
   const instance = page()
+  instance.setData({phone: '13900139000', bookingPhone: booking.userPhone})
   await instance.initialize()
-  assert.equal(instance.data.activeReservation.id, booking.id)
-  assert.ok(calls.some(options => options.path.endsWith('/list-by-phone?phone=' + booking.userPhone)))
+  assert.equal(instance.data.view, 'main')
+  assert.equal(instance.data.activeReservation, null)
+  assert.equal(app.globalData.reservation, null)
+  assert.deepEqual(calls.map(options => options.path), ['/app-api/tf/activity/get', '/app-api/tf/booking/get-by-openid'])
   assert.equal(instance.data.name, '')
-  assert.equal(instance.data.phone, '')
+  assert.equal(instance.data.phone, '13900139000')
 })
 
 test('returning to foreground during the first lookup refreshes status instead of revealing an unchecked form', async () => {
@@ -590,6 +600,8 @@ test('consent is locked during submission and the cleared form is removed after 
 })
 
 test('confirmed submission clears all form values and details or restart cannot refill them', async () => {
+  const original = respond
+  respond = async options => options.path.endsWith('/get-by-openid') ? ok(booking) : original(options)
   const instance = readyForm()
   instance.setData({ dateText: api.formatDate(instance.data.dateValue), draftDateValue: instance.data.dateValue,
     draftSlotId: slots[0].id, timeSlots: [{ id: slots[0].id, value: instance.data.selectedTime }], mainScrollTop: 800 })
@@ -750,6 +762,8 @@ test('failed cancellation keeps the reservation and permits retry', async () => 
 })
 
 test('discovering an active booking removes home; detail taps open one child and return to the root list', async () => {
+  const original = respond
+  respond = async options => options.path.endsWith('/get-by-openid') ? ok(booking) : original(options)
   const form = readyForm()
   await form.openMyBookings()
   await settlePages()
@@ -834,49 +848,82 @@ test('my bookings distinguishes lookup failures from empty results and supports 
   assert.equal(details.data.hasQueriedBookings, true)
 })
 
-test('startup falls back to server-verified cached id/phone when backend requires query openid', async () => {
-  storage.set(localState.bookingKey, { id: booking.id, phone: booking.userPhone })
+test('missing backend identity shows retry and blocks submission with or without local booking data', async () => {
   const original = respond
   respond = async (options) => options.path.endsWith('/get-by-openid')
     ? { statusCode: 400, data: { code: 400, msg: 'Required request parameter openid is not present' } }
     : original(options)
-  const instance = page()
-  await instance.initialize()
-  await settlePages()
-  assert.equal(activePage().data.isBookingRoot, true)
-  assert.equal(activePage().data.reservation.id, booking.id)
-  assert.ok(calls.some((options) => options.path.includes(`/booking/get?id=${booking.id}&phone=${booking.userPhone}`)))
+  for (const cached of [false, true]) {
+    if (cached) {
+      storage.set(localState.bookingKey, {id: booking.id, phone: booking.userPhone})
+      storage.set(localState.profileKey, {phone: booking.userPhone})
+    }
+    calls.length = 0
+    const instance = page()
+    await instance.initialize()
+    await settlePages()
+    assert.equal(activePage(), instance)
+    assert.equal(instance.data.view, 'error')
+    assert.match(instance.data.bookingLookupError, /无法确认预约状态/)
+    assert.deepEqual(calls.map(options => options.path), ['/app-api/tf/activity/get', '/app-api/tf/booking/get-by-openid'])
+    await instance.submitReservation()
+    assert.equal(calls.length, 2)
+    assert.equal(notices.at(-1), '请先确认预约状态')
+  }
 })
 
-test('cancelled bookings restore the form; failed booking lookups show retry state and block submission', async () => {
+test('retrying a failed booking lookup preserves activity and rechecks identity without cached fallbacks', async () => {
   storage.set(localState.bookingKey, { id: booking.id, phone: booking.userPhone })
   const original = respond
-  respond = async (options) => options.path.includes('/booking/get?') ? ok({ ...booking, status: 1 })
-    : options.path.includes('/list-by-phone') ? ok([{ ...booking, status: 1 }]) : original(options)
-  const instance = page()
-  await instance.initialize()
-  await settlePages()
-  assert.equal(instance.data.view, 'main')
-  assert.equal(instance.data.activeReservation, null)
-  assert.equal(localState.getBookingReference(), null)
-  storage.set(localState.bookingKey, { id: booking.id, phone: booking.userPhone })
-  respond = async (options) => {
-    if (options.path.includes('/booking/get?') || options.path.includes('/list-by-phone')) throw new Error('network unavailable')
+  respond = async options => {
+    if (options.path.endsWith('/get-by-openid')) throw new Error('network unavailable')
     return original(options)
   }
+  const instance = page()
   await instance.initialize()
   await settlePages()
   assert.equal(instance.data.view, 'error')
   assert.match(instance.data.bookingLookupError, /无法确认预约状态/)
   assert.ok(localState.getBookingReference())
-  const requestCount = calls.length
+  const loadedActivity = instance.data.activity
+  const loadedMonths = instance.data.months
+  assert.equal(calls.length, 2)
   await instance.submitReservation()
-  assert.equal(calls.length, requestCount)
+  assert.equal(calls.length, 2)
   assert.equal(notices.at(-1), '请先确认预约状态')
+  respond = original
+  await instance.retryInitialize()
+  assert.equal(instance.data.view, 'main')
+  assert.equal(instance.data.bookingLookupError, '')
+  assert.equal(instance.data.errorMessage, '')
+  assert.equal(instance.data.activity, loadedActivity)
+  assert.equal(instance.data.months, loadedMonths)
+  assert.deepEqual(calls.map(options => options.path), [
+    '/app-api/tf/activity/get', '/app-api/tf/booking/get-by-openid', '/app-api/tf/booking/get-by-openid'
+  ])
   respond = async options => options.path.endsWith('/get-by-openid') ? ok(booking) : original(options)
-  await instance.refreshHomeBooking()
+  await instance.retryInitialize()
+  await settlePages()
+  assert.equal(activePage().data.isBookingRoot, true)
   assert.equal(instance.data.bookingLookupError, '')
   assert.equal(instance.data.activeReservation.id, booking.id)
+  assert.equal(calls.filter(options => options.path.endsWith('/activity/get')).length, 1)
+})
+
+test('invalid identity responses are errors rather than empty bookings', async () => {
+  const original = respond
+  for (const invalid of [undefined, false, '', [], {}, {...booking, id: null}, {...booking, bookingDate: null},
+    {...booking, status: undefined}, {...booking, status: null}, {...booking, status: ''}, {...booking, status: 9}]) {
+    calls.length = 0
+    respond = async options => options.path.endsWith('/get-by-openid') ? ok(invalid) : original(options)
+    const instance = page()
+    await instance.initialize()
+    assert.equal(instance.data.view, 'error')
+    assert.match(instance.data.bookingLookupError, /无法确认预约状态/)
+    assert.equal(calls.length, 2)
+  }
+  respond = async () => ok(null)
+  assert.equal(await api.getActiveBooking(), null)
 })
 
 test('viewing a historical booking preserves a different active booking reference', () => {
@@ -906,11 +953,7 @@ test('older detail responses cannot overwrite a newly selected booking', async (
   assert.equal(app.globalData.reservation.id, booking.id)
 })
 
-test('first-time visitors can book when the legacy openid query is required', async () => {
-  const original = respond
-  respond = async (options) => options.path.endsWith('/get-by-openid')
-    ? { statusCode: 400, data: { code: 400, msg: 'Required request parameter openid is not present' } }
-    : original(options)
+test('first-time visitors can book after an empty identity result without sending openid', async () => {
   const instance = page()
   await instance.initialize()
   await settlePages()

@@ -90,12 +90,27 @@ async function getSlots(date) {
   }))
 }
 
+async function getActiveBooking() {
+  // 微信身份由云托管注入请求头，后端据此查询；只有 null 表示没有有效预约。
+  const record = await request('/tf/booking/get-by-openid')
+  if (record === null) return null
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    throw serviceError('预约服务返回数据格式异常，请稍后重试。', 'INVALID_RESPONSE')
+  }
+  const reservation = normalizeBooking(record)
+  if (reservation.id === undefined || reservation.id === null || reservation.id === '' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(reservation.date) || record.status === undefined || record.status === null ||
+      record.status === '' || ![0, 1, 2].includes(reservation.status)) {
+    throw serviceError('预约服务返回数据格式异常，请稍后重试。', 'INVALID_RESPONSE')
+  }
+  return reservation
+}
+
 module.exports = {
   toDateStr, toTimeStr, toDateTimeStr, formatDate, todayInShanghai, normalizeBooking,
-  getActivity, getMonthStatus, getSlots,
+  getActivity, getMonthStatus, getSlots, getActiveBooking,
   createBooking: (data) => request('/tf/booking/create', { method: 'POST', data }),
   getBooking: async (id, phone) => normalizeBooking(await request('/tf/booking/get', { data: { id, phone } })),
-  getActiveBooking: async (openid) => normalizeBooking(await request('/tf/booking/get-by-openid', { data: { openid } })),
   listBookings: async (phone) => asList(await request('/tf/booking/list-by-phone', { data: { phone } })).map(normalizeBooking),
   cancelBooking: (id, phone) => request('/tf/booking/cancel', { method: 'POST', data: { id, phone } })
 }
