@@ -1,0 +1,45 @@
+<view class="app-shell">
+  <view wx:if="{{view === 'date'}}" class="page-body picker-page">
+    <view class="date-picker-header">
+      <view class="section-heading">
+        <text class="heading-cn">选择日期</text>
+        <text class="heading-en">PICK A DATE</text>
+      </view>
+
+      <view wx:if="{{isLoadingDates}}" class="state-message">正在加载可预约日期…</view>
+      <view wx:elif="{{dateError}}" class="state-message state-message--error">
+        <text>{{dateError}}</text>
+        <button class="text-action" bindtap="loadDates">重新加载</button>
+      </view>
+      <text wx:else class="date-legend">灰色日期不可预约，包含已约满和已截止日期</text>
+      <text wx:if="{{!isLoadingDates && !dateError && !hasAvailableDates}}" class="state-message">当前暂无可预约日期</text>
+
+      <view class="week-row">
+        <text wx:for="{{weekdays}}" wx:key="*this" class="week-label">{{item}}</text>
+      </view>
+    </view>
+
+    <scroll-view class="subpage-scroll picker-scroll" scroll-y>
+      <view class="subpage date-page">
+        <view wx:for="{{months}}" wx:key="key" wx:for-item="month" class="month-block">
+          <text class="month-label">{{month.label}}</text>
+          <view class="date-grid">
+            <button
+              wx:for="{{month.days}}"
+              wx:key="key"
+              wx:for-item="day"
+              class="date-cell {{day.placeholder ? 'date-cell--placeholder' : ''}} {{day.disabled ? 'date-cell--disabled' : ''}} {{draftDateValue === day.value ? 'date-cell--selected' : ''}}"
+              data-value="{{day.value}}"
+              disabled="{{day.placeholder || day.disabled}}"
+              bindtap="selectDate"
+            >{{day.label}}</button>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+    <view class="picker-actions">
+      <button class="outline-confirm" bindtap="confirmDate" disabled="{{isLoadingDates || dateError || !draftDateValue}}">确认</button>
+    </view>
+  </view>
+
+</view>

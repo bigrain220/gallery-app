@@ -1,0 +1,25 @@
+@import "../index/index.wxss";
+
+.date-picker-header {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 56rpx 74rpx 0;
+  background: #fff;
+}
+
+.date-picker-header .date-legend,
+.date-picker-header .state-message {
+  margin-top: 28rpx;
+}
+
+.date-picker-header .week-row {
+  margin-top: 40rpx;
+}
+
+.date-picker-header .week-label {
+  line-height: 32rpx;
+}
+
+.date-page {
+  padding-top: 0;
+}

@@ -1,12 +1,12 @@
 {
-  "appid": "wx59c6ed26cfd20b9b",
+  "appid": "wx4c8c483466acd3bb",
   "projectname": "tf-collectors-room-vol2",
   "description": "Collector’s Room Vol.2 预约小程序",
   "compileType": "miniprogram",
   "miniprogramRoot": "./",
-  "cloudfunctionRoot": "cloudfunctions/",
   "setting": {
     "useCompilerPlugins": false,
+    "ignoreDevUnusedFiles": false,
     "es6": true,
     "enhance": true,
     "minified": true,
@@ -43,6 +43,14 @@
       },
       {
         "value": "README.md",
+        "type": "file"
+      },
+      {
+        "value": "tests",
+        "type": "folder"
+      },
+      {
+        "value": "移动端接口清单.md",
         "type": "file"
       }
     ],

@@ -1,4 +1,5 @@
 {
-  "navigationStyle": "custom",
+  "navigationStyle": "default",
+  "navigationBarTitleText": "Collector’s Room Vol.2",
   "disableScroll": true
 }

@@ -1,0 +1,35 @@
+<view class="app-shell">
+  <view wx:if="{{view === 'time'}}" class="page-body picker-page">
+    <scroll-view class="subpage-scroll picker-scroll" scroll-y>
+      <view class="subpage time-page">
+        <view class="section-heading">
+          <text class="heading-cn">选择时间</text>
+          <text class="heading-en">PICK A TIME</text>
+        </view>
+
+        <text class="date-legend">{{dateText}}</text>
+        <view wx:if="{{isLoadingSlots}}" class="state-message">正在加载可预约时段…</view>
+        <view wx:elif="{{slotError}}" class="state-message state-message--error">
+          <text>{{slotError}}</text>
+          <button class="text-action" bindtap="loadSlots">重新加载</button>
+        </view>
+        <view wx:elif="{{!timeSlots.length}}" class="state-message">当天暂无可预约时段，请选择其他日期</view>
+
+        <view class="time-grid">
+          <button
+            wx:for="{{timeSlots}}"
+            wx:key="id"
+            class="time-cell {{item.disabled ? 'time-cell--disabled' : ''}} {{draftSlotId === item.id ? 'time-cell--selected' : ''}}"
+            data-id="{{item.id}}"
+            disabled="{{item.disabled}}"
+            bindtap="selectTime"
+          ><text class="slot-time">{{item.value}}</text><text class="slot-status">{{item.statusText}}</text></button>
+        </view>
+      </view>
+    </scroll-view>
+    <view class="picker-actions">
+      <button class="outline-confirm" bindtap="confirmTime" disabled="{{isLoadingSlots || slotError || draftSlotId === ''}}">确认</button>
+    </view>
+  </view>
+
+</view>

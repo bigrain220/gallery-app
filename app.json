@@ -1,11 +1,17 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/index/index",
+    "pages/date/date",
+    "pages/time/time",
+    "pages/reservation/reservation"
   ],
   "window": {
-    "navigationStyle": "custom",
+    "navigationStyle": "default",
     "backgroundColor": "#ffffff",
-    "backgroundTextStyle": "dark"
+    "backgroundTextStyle": "dark",
+    "navigationBarTitleText": "Collector’s Room Vol.2",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black"
   },
   "__usePrivacyCheck__": true,
   "sitemapLocation": "sitemap.json"
