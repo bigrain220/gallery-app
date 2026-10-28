@@ -1,17 +1,25 @@
+<import src="../../templates/bookings.wxml" />
+<page-meta page-style="overflow: {{view === 'main' && !showPolicy ? 'auto' : 'hidden'}};"></page-meta>
 <view class="app-shell">
-  <view wx:if="{{view === 'loading'}}" class="page-body loading-page">
-    <image class="loading-art" src="/assets/loading.png" mode="aspectFill" aria-label="GUCCI BY TOM FORD"></image>
+  <view wx:if="{{showStartupLoading}}" class="page-body loading-page startup-loading {{startupLoadingFading ? 'startup-loading--fading' : ''}}" catchtap="noop" catchtouchmove="noop">
+    <image class="loading-art" src="/assets/loading.png" mode="aspectFill" bindload="onStartupArtReady" binderror="onStartupArtReady" aria-label="GUCCI BY TOM FORD"></image>
+  </view>
+  <view wx:if="{{view === 'loading' && !showStartupLoading}}" class="page-body booking-check-page">
+    <text>正在确认预约状态…</text>
   </view>
 
-  <scroll-view
-    class="page-body main-scroll {{view !== 'main' ? 'main-scroll--inactive' : ''}}"
-    scroll-y
-    scroll-with-animation="{{false}}"
-    scroll-top="{{mainScrollTop}}"
-    bindscroll="onMainScroll"
-  >
+  <view class="main-scroll {{view !== 'main' ? 'main-scroll--inactive' : ''}}">
     <view class="main-content">
-      <image class="exhibition-art" src="{{activity.coverUrl || activity.exhibitUrl || '/assets/exhibition.jpg'}}" mode="widthFix"></image>
+      <image
+        wx:for="{{[activity.coverUrl || activity.exhibitUrl || '/assets/exhibition.jpg']}}"
+        wx:key="*this"
+        class="exhibition-art"
+        src="{{item}}"
+        data-src="{{item}}"
+        mode="widthFix"
+        bindload="onHomeCoverReady"
+        binderror="onHomeCoverReady"
+      ></image>
 
       <view class="event-intro">
         <image wx:if="{{activity.titleUrl}}" class="event-title-image" src="{{activity.titleUrl}}" mode="widthFix"></image>
@@ -84,7 +92,10 @@
         <button class="my-bookings-button" bindtap="openMyBookings" disabled="{{isSubmitting}}">我的预约</button>
       </view>
     </view>
-  </scroll-view>
+  </view>
+
+  <block wx:if="{{view === 'bookings'}}"><template is="booking-list" data="{{bookings, isBookingRoot, showBookingSuccess, hasQueriedBookings, bookingError, isLoadingBookings, isCancelling}}"></template></block>
+  <template is="booking-cancel-dialog" data="{{showCancelDialog, cancelTarget, isCancelling}}"></template>
 
   <view wx:if="{{view === 'error'}}" class="page-body error-page">
     <view class="error-card">

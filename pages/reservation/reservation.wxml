@@ -1,118 +1,20 @@
-<view class="app-shell">
+<import src="../../templates/bookings.wxml" />
+<import src="../../templates/success.wxml" />
+<page-meta page-style="background-color: {{view === 'bookings' ? '#f7f7f5' : '#050505'}};"></page-meta>
+<view class="app-shell {{view === 'success' ? 'reservation-shell--dark' : ''}}">
+  <view wx:if="{{showStartupLoading}}" class="page-body loading-page startup-loading {{startupLoadingFading ? 'startup-loading--fading' : ''}}" catchtap="noop" catchtouchmove="noop">
+    <image class="loading-art" src="/assets/loading.png" mode="aspectFill" bindload="onStartupArtReady" binderror="onStartupArtReady" aria-label="GUCCI BY TOM FORD"></image>
+  </view>
   <view wx:if="{{view === 'loading'}}" class="page-body loading-page">
     <image class="loading-art" src="/assets/loading.png" mode="aspectFill" aria-label="GUCCI BY TOM FORD"></image>
   </view>
 
   <scroll-view wx:if="{{view === 'success'}}" class="page-body success-page" scroll-y>
-    <view class="success-canvas" style="height: 100vh;">
-    <image class="success-art" src="{{activity.successUrl || '/assets/success.jpg'}}" mode="aspectFill"></image>
-    <view class="success-overlay">
-      <image class="success-title-image" src="{{activity.titleUrl || '/assets/title.png'}}" mode="widthFix" aria-label="Collector’s Room Vol.2 / Tom Ford for Gucci and Yves Saint Laurent"></image>
-      <view class="success-details">
-        <text>{{reservation.dateText}}，{{reservation.time}}</text>
-        <button class="address" bindtap="openVenueLocation" aria-label="打开活动地址地图">{{activity.address || venueAddress}}</button>
-      </view>
-      <view class="success-status">
-        <text class="success-cn">{{reservation.status === 0 ? (reservation.canCancel ? '预约成功' : '预约已过期') : reservation.statusText}}</text>
-        <text class="success-en">{{reservation.status === 0 ? (reservation.canCancel ? 'VISIT CONFIRMED' : 'EXPIRED') : (reservation.status === 1 ? 'CANCELLED' : 'CHECKED IN')}}</text>
-      </view>
-      <view wx:if="{{detailError}}" class="success-refresh"><text>{{detailError}}</text><button class="success-action" bindtap="refreshReservation" loading="{{isRefreshing}}" disabled="{{isRefreshing}}">刷新预约信息</button></view>
-      <text wx:if="{{activity.wechat || activity.redbook || activity.email}}" class="success-more-label">更多信息</text>
-      <view wx:if="{{activity.wechat || activity.redbook || activity.email}}" class="success-contacts">
-        <view wx:if="{{activity.wechat}}" class="success-contact">
-          <text class="contact-label">WECHAT:</text><text class="contact-value">{{activity.wechat}}</text>
-        </view>
-        <view wx:if="{{activity.redbook}}" class="success-contact">
-          <text class="contact-label">REDBOOK:</text><text class="contact-value">{{activity.redbook}}</text>
-        </view>
-        <view wx:if="{{activity.email}}" class="success-contact">
-          <text class="contact-label">EMAIL:</text><text class="contact-value">{{activity.email}}</text>
-        </view>
-      </view>
-    </view>
-    </view>
+    <template is="success-content" data="{{activity, reservation, venueAddress, detailError, isRefreshing, successArtSrc, successTitleSrc}}"></template>
   </scroll-view>
 
-  <scroll-view wx:elif="{{view === 'bookings'}}" class="page-body bookings-scroll" scroll-y>
-    <view class="bookings-page">
-      <view class="bookings-heading">
-        <text class="bookings-eyebrow">MY BOOKINGS</text>
-        <text class="bookings-title">我的预约</text>
-        <view class="bookings-heading-rule"></view>
-        <text class="bookings-subtitle">查看并管理您的到访安排</text>
-      </view>
+  <block wx:elif="{{view === 'bookings'}}"><template is="booking-list" data="{{bookings, isBookingRoot, showBookingSuccess, hasQueriedBookings, bookingError, isLoadingBookings, isCancelling}}"></template></block>
 
-      <view class="bookings-list-heading">
-        <text>预约记录</text>
-        <text wx:if="{{hasQueriedBookings && !bookingError}}" class="bookings-count">{{bookings.length}} 项</text>
-      </view>
-
-      <view wx:if="{{isLoadingBookings}}" class="bookings-state" role="status">
-        <view class="bookings-loading-mark"></view>
-        <text class="bookings-state-title">正在加载预约记录…</text>
-      </view>
-      <view wx:elif="{{bookingError}}" class="bookings-state">
-        <text class="bookings-state-eyebrow">PLEASE TRY AGAIN</text>
-        <text class="bookings-state-title">预约记录暂时无法加载</text>
-        <text class="bookings-state-copy">{{bookingError}}</text>
-        <button class="booking-button booking-button--primary bookings-state-button" bindtap="queryBookings">重新加载</button>
-      </view>
-      <view wx:elif="{{hasQueriedBookings && !bookings.length}}" class="bookings-state">
-        <view class="bookings-empty-mark"><view></view><view></view></view>
-        <text class="bookings-state-title">暂无预约记录</text>
-        <text class="bookings-state-copy">完成预约后，可在这里查看您的到访信息。</text>
-        <button wx:if="{{isBookingRoot}}" class="booking-button booking-button--primary bookings-state-button" bindtap="queryBookings">重新加载</button>
-        <button wx:else class="booking-button booking-button--primary bookings-state-button" bindtap="returnToForm">去预约</button>
-      </view>
-
-      <view wx:for="{{bookings}}" wx:key="id" class="booking-card">
-        <view class="booking-card-header">
-          <text class="booking-card-caption">VISIT RESERVATION</text>
-          <view class="booking-status {{item.canCancel ? 'booking-status--active' : ''}}">
-            <view class="booking-status-dot"></view>
-            <text>{{item.status === 0 && !item.canCancel ? '已过期' : item.statusText}}</text>
-          </view>
-        </view>
-        <view class="booking-schedule">
-          <text class="booking-date">{{item.dateText}}</text>
-          <text class="booking-time">{{item.time}}</text>
-        </view>
-        <view class="booking-information">
-          <view class="booking-information-row">
-            <text class="booking-label">预约人</text>
-            <text class="booking-value">{{item.name || '—'}}</text>
-          </view>
-          <view class="booking-information-row">
-            <text class="booking-label">手机号码</text>
-            <text class="booking-value">{{item.phone || '—'}}</text>
-          </view>
-          <view class="booking-information-row booking-reference-row">
-            <text class="booking-label">预约编号</text>
-            <text class="booking-value booking-reference">{{item.bookingNo || '—'}}</text>
-          </view>
-        </view>
-        <view class="booking-actions">
-          <button wx:if="{{item.canCancel}}" class="booking-button" data-id="{{item.id}}" bindtap="cancelReservation" disabled="{{isCancelling}}">取消预约</button>
-          <button class="booking-button booking-button--primary" data-id="{{item.id}}" bindtap="viewBooking" disabled="{{isCancelling}}">查看详情</button>
-        </view>
-      </view>
-
-      <view wx:if="{{hasQueriedBookings && bookings.length}}" class="bookings-footer">
-        <view class="bookings-footer-rule"></view>
-        <text>到访前请确认预约日期与时段</text>
-      </view>
-    </view>
-  </scroll-view>
-
-  <view wx:if="{{showCancelDialog}}" class="dialog-mask" catchtap="closeCancelDialog">
-    <view class="dialog-card" catchtap="noop">
-      <text class="dialog-title">取消预约</text>
-      <text class="information-copy">确认取消 {{cancelTarget.dateText}} {{cancelTarget.time}} 的预约吗？</text>
-      <view class="dialog-actions">
-        <button class="booking-button" bindtap="closeCancelDialog" disabled="{{isCancelling}}">暂不取消</button>
-        <button class="booking-button booking-button--primary" bindtap="confirmCancelReservation" loading="{{isCancelling}}" disabled="{{isCancelling}}">确认取消</button>
-      </view>
-    </view>
-  </view>
+  <template is="booking-cancel-dialog" data="{{showCancelDialog, cancelTarget, isCancelling}}"></template>
 
 </view>

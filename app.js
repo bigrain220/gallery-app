@@ -1,4 +1,7 @@
 App({
+  onShow() {
+    this.globalData.foregroundVersion += 1
+  },
   onLaunch() {
     if (!wx.cloud || typeof wx.cloud.callContainer !== 'function') {
       console.error('当前基础库不支持云托管，请升级微信后重试。')
@@ -10,8 +13,9 @@ App({
   },
 
   globalData: {
+    foregroundVersion: 0,
     reservation: null,
-    bookingEntry: null,
+    detailPreview: null,
     user: null
   }
 })

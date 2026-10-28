@@ -1,13 +1,14 @@
 const api = require('./tf')
 const localState = require('./local-state')
+const startupLoading = require('./startup-loading')
+const loadSuccessArtwork = require('./success-artwork')
 const venue = require('../config/venue')
 const { getVenueLocation } = require('./location')
 
 const PAGE_ROUTES = {
   date: '/pages/date/date',
   time: '/pages/time/time',
-  success: '/pages/reservation/reservation',
-  bookings: '/pages/reservation/reservation'
+  success: '/pages/reservation/reservation'
 }
 
 function buildMonths(startDate, endDate) {
@@ -43,6 +44,10 @@ function isActiveBooking(reservation) {
 const definition = {
   data: {
     view: 'loading',
+    showStartupLoading: false,
+    startupLoadingFading: false,
+    successArtSrc: '',
+    successTitleSrc: '',
     mainScrollTop: 0,
     activity: {},
     venueAddress: venue.address,
@@ -78,6 +83,7 @@ const definition = {
     isBookingRoot: false,
     reservation: null,
     activeReservation: null,
+    showBookingSuccess: false,
     showCancelDialog: false,
     cancelTarget: null,
     showPolicy: false,
@@ -88,12 +94,12 @@ const definition = {
   onLoad() {
     if (this.pageType === 'main') return this.initialize()
     if (getCurrentPages().length < 2) {
-      const entry = getApp().globalData.bookingEntry
-      if (this.pageType === 'reservation' && entry && isActiveBooking(entry.reservation)) {
-        getApp().globalData.bookingEntry = null
-        return this.initializeBookingRoot(entry)
-      }
       return wx.reLaunch({ url: '/pages/index/index' })
+    }
+    const preview = getApp().globalData.detailPreview
+    if (this.pageType === 'reservation' && preview) {
+      getApp().globalData.detailPreview = null
+      this.setData(preview)
     }
     this.openerChannel = this.getOpenerEventChannel()
     this.openerChannel.on('initialize', (data) => {
@@ -109,27 +115,40 @@ const definition = {
 
   onShow() {
     this.navigating = false
-    if (this.data.isBookingRoot && typeof wx.hideHomeButton === 'function') wx.hideHomeButton()
     const openedPage = this.openedPage
     this.openedPage = null
+    if (this.initialized && this.pageType === 'main' && this.data.view === 'bookings') {
+      const returningFromDetails = openedPage === 'success'
+        && this.detailForegroundVersion === (getApp().globalData.foregroundVersion || 0)
+        && !this.resumeBookingsQuery
+      this.resumeBookingsQuery = false
+      if (returningFromDetails) return
+      this.setData({ showBookingSuccess: false })
+      return this.queryBookings()
+    }
     if (this.initialized && this.pageType === 'main') {
       const current = getApp().globalData.reservation
-      // 列表发现有效预约时已移除首页；正常返回时直接保留原表单。
+      // 日期、时段子页返回时保留原表单。
       const returningToForm = openedPage === 'date' || openedPage === 'time' || openedPage === 'bookings'
       const shouldCheck = !returningToForm && !this.data.isSubmitting
       this.setData({ activeReservation: isActiveBooking(current) ? current : null,
         ...(shouldCheck ? { view: 'loading', isCheckingBooking: true } : {}) })
       if (shouldCheck) return this.refreshHomeBooking()
     }
-    if (this.initialized && this.data.isBookingRoot && this.data.view === 'bookings') {
-      if (!this.rootHasShown) { this.rootHasShown = true; return }
-      return this.queryBookings()
-    }
     if (this.initialized && this.pageType === 'reservation' && this.data.view === 'success') this.refreshReservation()
   },
 
+  onStartupArtReady() {
+    startupLoading.artReady(this)
+  },
+
+  onHomeCoverReady(event) {
+    startupLoading.homeCoverReady(this, event.currentTarget.dataset.src)
+  },
+
   onHide() {
-    if (this.data.isBookingRoot) {
+    startupLoading.cancel(this)
+    if (this.data.view === 'bookings') {
       this.homeBookingRequestId = (this.homeBookingRequestId || 0) + 1
       this.bookingListRequestId = (this.bookingListRequestId || 0) + 1
       this.setData({ isLoadingBookings: false })
@@ -141,8 +160,7 @@ const definition = {
   },
 
   updateNavigationTitle() {
-    const title = this.pageType === 'reservation'
-      ? (this.data.view === 'success' ? '预约详情' : '我的预约')
+    const title = this.data.view === 'success' ? '预约详情' : this.data.view === 'bookings' ? '我的预约'
       : (this.data.activity.name || this.data.activity.nameEn || 'Collector’s Room Vol.2')
     wx.setNavigationBarTitle({ title })
   },
@@ -153,12 +171,24 @@ const definition = {
     const page = view === 'date' || view === 'time' ? view : 'reservation'
     const { activity, dateValue, dateText, selectedSlotId, selectedTime, reservation } = this.data
     const data = { activity, dateValue, dateText, selectedSlotId, selectedTime,
-      ...(page === 'reservation' ? { reservation } : {}),
+      ...(page === 'reservation' ? { reservation, successArtSrc: this.data.successArtSrc, successTitleSrc: this.data.successTitleSrc } : {}),
       draftDateValue: dateValue, draftSlotId: selectedSlotId, view, ...extra }
+    if (view === 'success') {
+      getApp().globalData.detailPreview = data
+      this.detailForegroundVersion = getApp().globalData.foregroundVersion || 0
+      this.resumeBookingsQuery = this.data.isLoadingBookings
+    }
     return new Promise(resolve => {
       wx.navigateTo({
         url: PAGE_ROUTES[view],
         events: {
+          reservationUpdated: (reservation) => {
+            if (this.destroyed || !data.reservation || !sameId(data.reservation.id, reservation.id)) return
+            const previous = this.data.bookings.find(item => sameId(item.id, reservation.id))
+            if (!previous || JSON.stringify(previous) === JSON.stringify(reservation)) return
+            this.setData({ bookings: this.data.bookings.map(item => sameId(item.id, reservation.id) ? reservation : item),
+              ...(this.data.reservation && sameId(this.data.reservation.id, reservation.id) ? { reservation } : {}) })
+          },
           dateConfirmed: ({ dateValue }) => { if (!this.destroyed) this.applyDateSelection(dateValue) },
           timeConfirmed: (selection) => {
             if (this.destroyed || selection.dateValue !== this.data.dateValue) return
@@ -166,72 +196,63 @@ const definition = {
           }
         },
         success: ({ eventChannel }) => { this.openedPage = view; eventChannel.emit('initialize', data); resolve(true) },
-        fail: () => { this.navigating = false; this.toast('页面打开失败，请重试'); resolve(false) }
+        fail: () => {
+          if (getApp().globalData.detailPreview === data) getApp().globalData.detailPreview = null
+          this.navigating = false; this.toast('页面打开失败，请重试'); resolve(false)
+        }
       })
     })
   },
 
-  showReservation() {
-    if (this.pageType === 'main') {
-      return this.enterBookingRoot(true)
-    }
-    this.setData({ view: 'success' })
+  showBookingList(bookingCreated = false) {
+    if (this.pageType === 'main') return this.enterBookingRoot(bookingCreated)
+    this.setData({ view: 'bookings', showBookingSuccess: bookingCreated })
     this.updateNavigationTitle()
-    return this.refreshReservation()
+    return this.queryBookings()
   },
 
-  enterBookingRoot(openDetails = false) {
-    if (this.navigating || this.destroyed) return Promise.resolve(false)
+  async enterBookingRoot(bookingCreated = false) {
+    if (this.destroyed) return false
     const reservation = getApp().globalData.reservation
-    if (!isActiveBooking(reservation)) return Promise.resolve(false)
-    const entry = { activity: this.data.activity, reservation, bookingPhone: reservation.phone, openDetails }
-    getApp().globalData.bookingEntry = entry
-    this.navigating = true
-    this.setData({ view: 'loading' })
-    return new Promise(resolve => wx.reLaunch({
-      url: PAGE_ROUTES.bookings,
-      success: () => resolve(true),
-      fail: () => {
-        if (getApp().globalData.bookingEntry === entry) getApp().globalData.bookingEntry = null
-        if (!this.destroyed) {
-          this.navigating = false
-          const message = '预约页面暂时无法打开，请重新加载。'
-          this.setData(this.pageType === 'main'
-            ? { view: 'error', errorMessage: message }
-            : { view: 'bookings', bookingError: message })
-        }
-        resolve(false)
-      }
-    }))
-  },
-
-  async initializeBookingRoot(entry) {
-    this.setData({ activity: entry.activity, reservation: entry.reservation, bookingPhone: entry.bookingPhone,
-      view: 'bookings', isBookingRoot: true })
-    this.initialized = true
+    if (!isActiveBooking(reservation)) return false
+    if (this.pageType !== 'main') {
+      const home = getCurrentPages().find(page => page.pageType === 'main')
+      if (!home) return wx.reLaunch({ url: '/pages/index/index' })
+      await home.enterBookingRoot(bookingCreated)
+      if (!this.destroyed) wx.navigateBack({ delta: getCurrentPages().length - 1 })
+      return true
+    }
+    this.setData({ view: 'bookings', isBookingRoot: true, bookingPhone: reservation.phone,
+      showBookingSuccess: bookingCreated, bookings: bookingCreated ? [reservation] : [],
+      hasQueriedBookings: bookingCreated })
     this.updateNavigationTitle()
-    await this.queryBookings()
-    if (entry.openDetails && !this.destroyed) return this.navigatePage('success')
+    this.bookingListPromise = this.queryBookings({ confirmedBooking: bookingCreated ? reservation : null, skipIdentityCheck: true })
+    if (!bookingCreated) await this.bookingListPromise
+    return true
   },
 
-  returnToHome() {
-    if (this.navigating || this.destroyed) return Promise.resolve(false)
-    this.navigating = true
-    return new Promise(resolve => wx.reLaunch({
-      url: '/pages/index/index',
-      success: () => resolve(true),
-      fail: () => {
-        if (!this.destroyed) {
-          this.navigating = false
-          this.setData({ bookingError: '预约首页暂时无法打开，请重新加载。', bookings: [], hasQueriedBookings: false })
-        }
-        resolve(false)
-      }
-    }))
+  async returnToHome() {
+    if (this.pageType !== 'main') {
+      const home = getCurrentPages().find(page => page.pageType === 'main')
+      if (!home) return wx.reLaunch({ url: '/pages/index/index' })
+      await home.returnToHome()
+      if (!this.destroyed) wx.navigateBack({ delta: getCurrentPages().length - 1 })
+      return true
+    }
+    this.homeBookingRequestId = (this.homeBookingRequestId || 0) + 1
+    this.bookingListRequestId = (this.bookingListRequestId || 0) + 1
+    this.setData({ view: 'main', isBookingRoot: false, isLoadingBookings: false, isCheckingBooking: false,
+      activeReservation: null, reservation: null, bookingPhone: '', bookings: [], hasQueriedBookings: false,
+      bookingError: '', bookingLookupError: '', showBookingSuccess: false })
+    this.clearReservationForm()
+    this.updateNavigationTitle()
+    await startupLoading.finish(this)
+    return true
   },
 
   onUnload() {
     this.destroyed = true
+    startupLoading.cancel(this)
     this.dateRequestId = (this.dateRequestId || 0) + 1
     this.slotRequestId = (this.slotRequestId || 0) + 1
     this.refreshRequestId = (this.refreshRequestId || 0) + 1
@@ -241,12 +262,14 @@ const definition = {
   async initialize() {
     if (this.initializing) return
     this.initializing = true
+    if (this.startupLoadingStartedAt === undefined) this.startupLoadingStartedAt = Date.now()
     this.setData({ view: 'loading', errorMessage: '' })
     try {
       const activity = await api.getActivity()
       if (this.destroyed) return
       const user = localState.getProfile()
       this.setData({ activity, months: buildMonths(activity.startDate, activity.endDate), bookingLookupError: '' })
+      this.prepareSuccessArtwork()
       this.updateNavigationTitle()
       getApp().globalData.user = user
       this.initialized = true
@@ -256,6 +279,7 @@ const definition = {
       if (!this.destroyed) this.setData({ view: 'error', errorMessage: this.friendlyError(error, '暂时无法连接预约服务，请稍后重试。') })
     } finally {
       this.initializing = false
+      if (this.data.view === 'error') await startupLoading.finish(this)
     }
   },
 
@@ -283,7 +307,8 @@ const definition = {
         await this.enterBookingRoot()
       } else {
         getApp().globalData.reservation = null
-        this.setData({ view: 'main', activeReservation: null, reservation: null })
+        this.setData({ view: 'main', isBookingRoot: false, activeReservation: null, reservation: null })
+        this.updateNavigationTitle()
       }
     } catch (error) {
       if (!this.destroyed && requestId === this.homeBookingRequestId) {
@@ -291,7 +316,10 @@ const definition = {
         this.setData({ view: 'error', bookingLookupError: message, errorMessage: message })
       }
     } finally {
-      if (!this.destroyed && requestId === this.homeBookingRequestId) this.setData({ isCheckingBooking: false })
+      if (!this.destroyed && requestId === this.homeBookingRequestId) {
+        if (this.data.view === 'main' || this.data.view === 'error') await startupLoading.finish(this)
+        if (!this.destroyed && requestId === this.homeBookingRequestId) this.setData({ isCheckingBooking: false })
+      }
     }
   },
 
@@ -299,6 +327,17 @@ const definition = {
     const user = { name, phone }
     getApp().globalData.user = user
     localState.saveProfile(user)
+  },
+
+  prepareSuccessArtwork() {
+    const key = JSON.stringify([this.data.activity.successUrl, this.data.activity.titleUrl])
+    if (this.successArtworkKey === key) return this.successArtworkPromise
+    this.successArtworkKey = key
+    this.successArtworkPromise = loadSuccessArtwork(this.data.activity).then(artwork => {
+      if (!this.destroyed && this.successArtworkKey === key) this.setData(artwork)
+      return artwork
+    })
+    return this.successArtworkPromise
   },
 
   applyReservation(reservation) {
@@ -328,6 +367,7 @@ const definition = {
       dateError: '', slotError: '', bookingLookupError: '', isLoadingDates: false, isLoadingSlots: false,
       mainScrollTop: 0, showPolicy: false, policyContent: '', policyIsRichText: false
     })
+    if (this.pageType === 'main' && !this.data.isSubmitting) wx.pageScrollTo({ scrollTop: 0, duration: 0 })
   },
 
   friendlyError(error, fallback) {
@@ -338,8 +378,8 @@ const definition = {
     wx.showToast({ title: message, icon: 'none' })
   },
 
-  onMainScroll(event) {
-    this.currentScrollTop = event.detail.scrollTop
+  onPageScroll(event) {
+    if (this.pageType === 'main') this.currentScrollTop = event.scrollTop
   },
 
   onInput(event) {
@@ -390,7 +430,11 @@ const definition = {
   returnToForm() {
     if (this.data.isBookingRoot) return this.queryBookings()
     if (this.pageType !== 'main') return wx.navigateBack({ delta: 1 })
-    this.setData({ view: 'main', mainScrollTop: this.formScrollTop ?? 0 })
+    const scrollTop = this.formScrollTop ?? 0
+    this.currentScrollTop = scrollTop
+    this.setData({ view: 'main', mainScrollTop: scrollTop })
+    this.updateNavigationTitle()
+    wx.pageScrollTo({ scrollTop, duration: 0 })
   },
 
   selectDate(event) {
@@ -481,7 +525,7 @@ const definition = {
     if (current && current.canCancel) {
       this.applyReservation(current)
       this.clearReservationForm()
-      await this.showReservation()
+      await this.showBookingList()
       return this.toast('您已有有效预约')
     }
     if (!name.trim()) return this.toast('请填写姓名')
@@ -506,7 +550,7 @@ const definition = {
       if (this.destroyed) return
       this.applyReservation(reservation)
       this.clearReservationForm()
-      await this.showReservation()
+      await this.showBookingList(true)
     } catch (error) {
       if (this.destroyed) return
       // 包含超时等结果未知的情形：先向后端确认是否已经创建。
@@ -533,7 +577,7 @@ const definition = {
       if (!reservation || this.destroyed) return false
       this.applyReservation(reservation)
       this.clearReservationForm()
-      await this.showReservation()
+      await this.showBookingList(true)
       return true
     } catch (error) {
       return false
@@ -551,6 +595,7 @@ const definition = {
       if (this.destroyed || requestId !== this.refreshRequestId || !this.data.reservation || !sameId(this.data.reservation.id, current.id)) return
       if (!reservation) throw new Error('未查询到该预约，请稍后刷新或查看我的预约')
       this.applyReservation(reservation)
+      if (this.openerChannel) this.openerChannel.emit('reservationUpdated', reservation)
     } catch (error) {
       if (!this.destroyed && requestId === this.refreshRequestId) this.setData({ detailError: this.friendlyError(error, '预约已提交，详情加载失败，请刷新。') })
     } finally {
@@ -567,15 +612,18 @@ const definition = {
     const bookingPhone = [current && current.phone, reference && reference.phone, profile.phone, this.data.phone]
       .map((value) => String(value || '').trim())
       .find((value) => /^1\d{10}$/.test(value)) || ''
-    return this.navigatePage('bookings', { bookingPhone })
+    this.setData({ view: 'bookings', bookingPhone, isBookingRoot: false })
+    this.updateNavigationTitle()
+    return this.queryBookings()
   },
 
-  async queryBookings() {
+  async queryBookings({ confirmedBooking = null, skipIdentityCheck = false } = {}) {
     if (this.data.isLoadingBookings) return
     const bookingRequestId = this.bookingListRequestId = (this.bookingListRequestId || 0) + 1
-    this.setData({ isLoadingBookings: true, bookingError: '', bookings: [], hasQueriedBookings: false })
+    this.setData({ isLoadingBookings: true, bookingError: '',
+      ...(confirmedBooking ? {} : { bookings: [], hasQueriedBookings: false }) })
     try {
-      if (this.data.isBookingRoot && this.rootHasShown) {
+      if (this.data.isBookingRoot && !skipIdentityCheck) {
         const requestId = this.homeBookingRequestId = (this.homeBookingRequestId || 0) + 1
         const active = await this.lookupActiveBooking(requestId)
         if (this.destroyed || bookingRequestId !== this.bookingListRequestId) return
@@ -600,16 +648,26 @@ const definition = {
       }
       const bookings = await api.listBookings(phone)
       if (this.destroyed || bookingRequestId !== this.bookingListRequestId) return
+      // The create response is authoritative even if the list endpoint has not caught up yet.
+      if (confirmedBooking && !bookings.some(item => sameId(item.id, confirmedBooking.id))) bookings.unshift(confirmedBooking)
       const active = bookings.find(isActiveBooking)
       if (active && !this.data.isBookingRoot) {
         this.applyReservation(active)
+        if (this.pageType === 'main') {
+          this.setData({ view: 'bookings', isBookingRoot: true, bookingPhone: active.phone, bookings, hasQueriedBookings: true })
+          this.updateNavigationTitle()
+          return
+        }
         return await this.enterBookingRoot()
       }
       this.setData({ bookings, hasQueriedBookings: true })
     } catch (error) {
       if (!this.destroyed && bookingRequestId === this.bookingListRequestId) this.setData({ bookingError: this.friendlyError(error, '查询失败，请重试。') })
     } finally {
-      if (!this.destroyed && bookingRequestId === this.bookingListRequestId) this.setData({ isLoadingBookings: false })
+      if (!this.destroyed && bookingRequestId === this.bookingListRequestId) {
+        this.setData({ isLoadingBookings: false })
+        if (this.data.view === 'bookings') await startupLoading.finish(this)
+      }
     }
   },
 
@@ -646,7 +704,7 @@ const definition = {
       localState.clearBookingReference(target.id)
       this.setData({ showCancelDialog: false, cancelTarget: null,
         ...(this.pageType === 'main' ? { activeReservation: getApp().globalData.reservation } : {}) })
-      if (this.pageType === 'reservation') {
+      if (this.data.isBookingRoot || this.pageType === 'reservation') {
         await this.returnToHome()
       } else if (this.data.view === 'bookings') {
         await this.queryBookings()
@@ -707,5 +765,6 @@ const definition = {
 // 各原生页面独立保存数据；仅在确认选择后向原表单回传结果。
 module.exports = function createPage(pageType) {
   const view = pageType === 'main' ? 'loading' : pageType === 'reservation' ? 'bookings' : pageType
-  return { ...definition, pageType, data: JSON.parse(JSON.stringify({ ...definition.data, view })) }
+  return { ...definition, pageType, data: JSON.parse(JSON.stringify({ ...definition.data, view,
+    showStartupLoading: pageType === 'main' })) }
 }

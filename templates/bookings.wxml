@@ -1,0 +1,98 @@
+<template name="booking-list">
+  <scroll-view  class="page-body bookings-scroll" scroll-y>
+    <view class="bookings-page">
+      <view class="bookings-heading">
+        <text class="bookings-eyebrow">MY BOOKINGS</text>
+        <text class="bookings-title">我的预约</text>
+        <view class="bookings-heading-rule"></view>
+        <text class="bookings-subtitle">查看并管理您的到访安排</text>
+      </view>
+
+      <view wx:if="{{showBookingSuccess}}" class="booking-success-notice" role="status">预约成功，可在下方查看预约信息。</view>
+
+      <view class="bookings-list-heading">
+        <text>预约记录</text>
+        <text wx:if="{{hasQueriedBookings && !bookingError}}" class="bookings-count">{{bookings.length}} 项</text>
+      </view>
+
+      <view wx:if="{{isLoadingBookings && !bookings.length}}" class="bookings-state" role="status">
+        <view class="bookings-loading-mark"></view>
+        <text class="bookings-state-title">正在加载预约记录…</text>
+      </view>
+      <view wx:elif="{{bookingError}}" class="bookings-state">
+        <text class="bookings-state-eyebrow">PLEASE TRY AGAIN</text>
+        <text class="bookings-state-title">预约记录暂时无法加载</text>
+        <text class="bookings-state-copy">{{bookingError}}</text>
+        <button class="booking-button booking-button--primary bookings-state-button" bindtap="queryBookings">重新加载</button>
+      </view>
+      <view wx:elif="{{hasQueriedBookings && !bookings.length}}" class="bookings-state">
+        <view class="bookings-empty-mark"><view></view><view></view></view>
+        <text class="bookings-state-title">暂无预约记录</text>
+        <text class="bookings-state-copy">完成预约后，可在这里查看您的到访信息。</text>
+        <button wx:if="{{isBookingRoot}}" class="booking-button booking-button--primary bookings-state-button" bindtap="queryBookings">重新加载</button>
+        <button wx:else class="booking-button booking-button--primary bookings-state-button" bindtap="returnToForm">去预约</button>
+      </view>
+
+      <view wx:for="{{bookings}}" wx:key="id" class="booking-card {{item.status === 1 ? 'booking-card--cancelled' : ''}}">
+        <view class="booking-card-header">
+          <text class="booking-card-caption">VISIT RESERVATION</text>
+          <view class="booking-status {{item.canCancel ? 'booking-status--active' : ''}}">
+            <view class="booking-status-dot"></view>
+            <text>{{item.status === 0 && !item.canCancel ? '已过期' : item.statusText}}</text>
+          </view>
+        </view>
+        <view class="booking-schedule">
+          <text class="booking-date">{{item.dateText}}</text>
+          <text class="booking-time">{{item.time}}</text>
+        </view>
+        <view class="booking-information">
+          <view class="booking-information-row">
+            <text class="booking-label">预约人</text>
+            <text class="booking-value">{{item.name || '—'}}</text>
+          </view>
+          <view class="booking-information-row">
+            <text class="booking-label">手机号码</text>
+            <text class="booking-value">{{item.phone || '—'}}</text>
+          </view>
+          <view class="booking-information-row booking-reference-row">
+            <text class="booking-label">预约编号</text>
+            <text class="booking-value booking-reference">{{item.bookingNo || '—'}}</text>
+          </view>
+        </view>
+        <view wx:if="{{item.status !== 1}}" class="booking-actions">
+          <button wx:if="{{item.canCancel}}" class="booking-button" data-id="{{item.id}}" bindtap="cancelReservation" disabled="{{isCancelling}}">重新/取消预约</button>
+          <button class="booking-button booking-button--primary" data-id="{{item.id}}" bindtap="viewBooking" disabled="{{isCancelling}}">查看详情</button>
+        </view>
+      </view>
+
+      <view wx:if="{{hasQueriedBookings && !bookingError && bookings.length && !isBookingRoot}}" class="bookings-rebook">
+        <button class="booking-button booking-button--primary" bindtap="returnToForm" disabled="{{isCancelling}}">重新预约</button>
+      </view>
+
+      <view wx:if="{{hasQueriedBookings && bookings.length}}" class="bookings-footer">
+        <view class="bookings-footer-rule"></view>
+        <text>到访前请确认预约日期与时段</text>
+      </view>
+    </view>
+  </scroll-view>
+
+</template>
+
+<template name="booking-cancel-dialog">
+  <view wx:if="{{showCancelDialog}}" class="dialog-mask" catchtap="closeCancelDialog">
+    <view class="dialog-card" catchtap="noop">
+      <text class="dialog-title">重新/取消预约</text>
+      <text class="information-copy">如需重新预约，请先取消当前预约，再选择新的日期和时段。取消后，原预约名额将被释放，新时段名额以重新预约时为准。
+
+确认取消 {{cancelTarget.dateText}} {{cancelTarget.time}} 的预约吗？</text>
+      <view class="dialog-actions">
+        <button class="booking-button" bindtap="closeCancelDialog" disabled="{{isCancelling}}" hover-class="none">暂不取消</button>
+        <button class="booking-button booking-button--primary" bindtap="confirmCancelReservation" disabled="{{isCancelling}}" hover-class="none" aria-busy="{{isCancelling}}">
+          <view wx:if="{{isCancelling}}" class="cancel-button-spinner"></view>
+          <text>{{isCancelling ? '取消中…' : '确认取消'}}</text>
+        </button>
+      </view>
+    </view>
+  </view>
+
+</template>

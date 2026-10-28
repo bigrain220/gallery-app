@@ -1,9 +1,5 @@
 @import "../index/index.wxss";
 
-.dialog-actions .booking-button {
-  width: 0;
-  height: 90rpx;
-  margin: 36rpx 0 0;
-  border-color: #222;
-  font-size: 25rpx;
+.reservation-shell--dark {
+  background: #050505;
 }

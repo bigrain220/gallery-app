@@ -1,0 +1,29 @@
+<template name="success-content">
+    <view class="success-canvas" style="height: 100vh;">
+    <image class="success-art" src="{{successArtSrc || activity.successUrl || '/assets/success.jpg'}}" mode="aspectFill"></image>
+    <view class="success-overlay">
+      <image class="success-title-image" src="{{successTitleSrc || activity.titleUrl || '/assets/title.png'}}" mode="widthFix" aria-label="Collector’s Room Vol.2 / Tom Ford for Gucci and Yves Saint Laurent"></image>
+      <view class="success-details">
+        <text>{{reservation.dateText}}，{{reservation.time}}</text>
+        <button class="address" bindtap="openVenueLocation" aria-label="打开活动地址地图">{{activity.address || venueAddress}}</button>
+      </view>
+      <view class="success-status">
+        <text class="success-cn">{{reservation.status === 0 ? (reservation.canCancel ? '预约成功' : '预约已过期') : reservation.statusText}}</text>
+        <text class="success-en">{{reservation.status === 0 ? (reservation.canCancel ? 'VISIT CONFIRMED' : 'EXPIRED') : (reservation.status === 1 ? 'CANCELLED' : 'CHECKED IN')}}</text>
+      </view>
+      <view wx:if="{{detailError}}" class="success-refresh"><text>{{detailError}}</text><button class="success-action" bindtap="refreshReservation" loading="{{isRefreshing}}" disabled="{{isRefreshing}}">刷新预约信息</button></view>
+      <text wx:if="{{activity.wechat || activity.redbook || activity.email}}" class="success-more-label">更多信息</text>
+      <view wx:if="{{activity.wechat || activity.redbook || activity.email}}" class="success-contacts">
+        <view wx:if="{{activity.wechat}}" class="success-contact">
+          <text class="contact-label">WECHAT:</text><text class="contact-value">{{activity.wechat}}</text>
+        </view>
+        <view wx:if="{{activity.redbook}}" class="success-contact">
+          <text class="contact-label">REDBOOK:</text><text class="contact-value">{{activity.redbook}}</text>
+        </view>
+        <view wx:if="{{activity.email}}" class="success-contact">
+          <text class="contact-label">EMAIL:</text><text class="contact-value">{{activity.email}}</text>
+        </view>
+      </view>
+    </view>
+    </view>
+</template>
