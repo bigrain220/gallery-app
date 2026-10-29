@@ -831,7 +831,7 @@ test('submit sends documented required fields and opens the list, while double t
   await settlePages()
   const creates = calls.filter((options) => options.path.endsWith('/create'))
   assert.equal(creates.length, 1)
-  assert.deepEqual(creates[0].data, { name: '测试预约', phone: '13800138000', date: '2099-12-20', slotId: slots[0].id })
+  assert.deepEqual(creates[0].data, { name: '测试预约', phone: '13800138000', visitorCount: 1, date: '2099-12-20', slotId: slots[0].id })
   assert.equal(activePage().data.view, 'bookings')
   assert.equal(activePage().data.bookings[0].bookingNo, booking.bookingNo)
   assert.equal(calls.some(options => options.path.includes('/booking/get?')), false)
@@ -1497,4 +1497,20 @@ test('every template event handler exists and WXML tags are balanced', () => {
     }
     assert.deepEqual(stack, [])
   }
+})
+
+test('visitor dropdown uses configured choices, selects and closes, and locks during submission', () => {
+  const instance = readyForm()
+  instance.setData({ activity: { ...instance.data.activity, maxVisitorCount: 3 } })
+  instance.toggleVisitorOptions()
+  assert.deepEqual(instance.data.visitorOptions, [1, 2, 3])
+  assert.equal(instance.data.showVisitorOptions, true)
+  instance.selectVisitorCount(event({ count: 4 }))
+  assert.equal(instance.data.showVisitorOptions, true)
+  instance.selectVisitorCount(event({ count: 2 }))
+  assert.equal(instance.data.visitorCount, 2)
+  assert.equal(instance.data.showVisitorOptions, false)
+  instance.setData({ isSubmitting: true })
+  instance.selectVisitorCount(event({ count: 1 }))
+  assert.equal(instance.data.visitorCount, 2)
 })

@@ -51,6 +51,7 @@ const definition = {
     mainScrollTop: 0,
     activity: {},
     venueAddress: venue.address,
+    visitorCount: 1, visitorCountSelected: false, showVisitorOptions: false, visitorOptions: [],
     name: '',
     phone: '',
     dateValue: '',
@@ -161,7 +162,7 @@ const definition = {
 
   updateNavigationTitle() {
     const title = this.data.view === 'success' ? '预约详情' : this.data.view === 'bookings' ? '我的预约'
-      : (this.data.activity.name || this.data.activity.nameEn || 'Collector’s Room Vol.2')
+      : (this.data.activity.name || this.data.activity.nameEn || "collector's room 02")
     wx.setNavigationBarTitle({ title })
   },
 
@@ -362,7 +363,7 @@ const definition = {
     this.currentScrollTop = 0
     this.formScrollTop = 0
     this.setData({
-      name: '', phone: '', dateValue: '', dateText: '', selectedTime: '', selectedSlotId: '',
+      visitorCount: 1, visitorCountSelected: false, showVisitorOptions: false, name: '', phone: '', dateValue: '', dateText: '', selectedTime: '', selectedSlotId: '',
       draftDateValue: '', draftSlotId: '', consented: false, timeSlots: [],
       dateError: '', slotError: '', bookingLookupError: '', isLoadingDates: false, isLoadingSlots: false,
       mainScrollTop: 0, showPolicy: false, policyContent: '', policyIsRichText: false
@@ -516,11 +517,28 @@ const definition = {
     this.setData({ showPolicy: false })
   },
 
+  toggleVisitorOptions() {
+    if (this.data.isSubmitting) return
+    this.setData({ showVisitorOptions: !this.data.showVisitorOptions,
+      visitorOptions: Array.from({ length: this.data.activity.maxVisitorCount || 5 }, (_, index) => index + 1) })
+  },
+
+  closeVisitorOptions() {
+    this.setData({ showVisitorOptions: false })
+  },
+
+  selectVisitorCount(event) {
+    if (this.data.isSubmitting) return
+    const count = Number(event.currentTarget.dataset.count)
+    if (!Number.isInteger(count) || count < 1 || count > (this.data.activity.maxVisitorCount || 5)) return
+    this.setData({ visitorCount: count, visitorCountSelected: true, showVisitorOptions: false })
+  },
+
   async submitReservation() {
     if (this.data.isSubmitting) return
     if (this.data.isCheckingBooking || this.data.bookingLookupError) return this.toast('请先确认预约状态')
     if (this.data.consented !== true) return this.toast('请阅读并同意隐私说明')
-    const { name, phone, dateValue, selectedSlotId } = this.data
+    const { name, phone, dateValue, selectedSlotId, visitorCount } = this.data
     const current = getApp().globalData.reservation
     if (current && current.canCancel) {
       this.applyReservation(current)
@@ -530,6 +548,7 @@ const definition = {
     }
     if (!name.trim()) return this.toast('请填写姓名')
     if (!/^1\d{10}$/.test(phone.trim())) return this.toast('请填写正确的手机号码')
+    if (!Number.isInteger(visitorCount) || visitorCount < 1 || visitorCount > (this.data.activity.maxVisitorCount || 5)) return this.toast('请选择有效的到访人数')
     if (!dateValue) return this.toast('请选择日期')
     if (selectedSlotId === '' || selectedSlotId === null || selectedSlotId === undefined) return this.toast('请选择时间')
     this.setData({ isSubmitting: true })
@@ -543,10 +562,10 @@ const definition = {
       }
       const cleanName = name.trim()
       const cleanPhone = phone.trim()
-      const id = await api.createBooking({ name: cleanName, phone: cleanPhone, date: dateValue, slotId: slot.id })
+      const id = await api.createBooking({ name: cleanName, phone: cleanPhone, visitorCount, date: dateValue, slotId: slot.id })
       if (id === null || id === undefined || id === '') throw new Error('预约服务未返回预约编号，请查询我的预约确认结果')
       // 创建成功即锁定当前预约，详情查询失败不能让用户重复提交。
-      const reservation = api.normalizeBooking({ id, userName: cleanName, userPhone: cleanPhone, bookingDate: dateValue, slotStartTime: slot.value.split('-')[0], slotEndTime: slot.value.split('-')[1], status: 0 })
+      const reservation = api.normalizeBooking({ id, userName: cleanName, userPhone: cleanPhone, visitorCount, bookingDate: dateValue, slotStartTime: slot.value.split('-')[0], slotEndTime: slot.value.split('-')[1], status: 0 })
       if (this.destroyed) return
       this.applyReservation(reservation)
       this.clearReservationForm()

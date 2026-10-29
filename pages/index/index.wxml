@@ -39,12 +39,25 @@
           <text class="heading-en">APPOINTMENT DETAILS</text>
         </view>
 
+        <view class="name-party-row">
         <view class="form-field">
           <view class="field-caption">
             <text class="field-cn">姓名</text>
             <text class="field-en">YOUR NAME</text>
           </view>
           <input class="field-input" value="{{name}}" data-field="name" bindinput="onInput" maxlength="30" cursor-spacing="24" disabled="{{isSubmitting}}" />
+        </view>
+
+          <view class="form-field party-field">
+            <view class="field-caption"><text class="field-cn">到访人数</text><text class="field-en">PARTY SIZE</text></view>
+            <button class="party-value" bindtap="toggleVisitorOptions" disabled="{{isSubmitting}}" aria-label="选择到访人数" aria-expanded="{{showVisitorOptions}}">{{visitorCountSelected ? visitorCount + '人' : ''}}</button>
+            <view wx:if="{{showVisitorOptions}}" class="party-dismiss" catchtap="closeVisitorOptions"></view>
+            <view wx:if="{{showVisitorOptions}}" class="party-options" style="height: {{(visitorOptions.length > 3 ? 3 : visitorOptions.length) * 56 + 2}}rpx;">
+              <scroll-view class="party-options-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+                <button wx:for="{{visitorOptions}}" wx:key="*this" class="party-option {{visitorCount === item ? 'party-option--selected' : ''}}" data-count="{{item}}" bindtap="selectVisitorCount">{{item}}人</button>
+              </scroll-view>
+            </view>
+          </view>
         </view>
 
         <view class="form-field">

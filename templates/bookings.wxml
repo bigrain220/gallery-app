@@ -54,6 +54,7 @@
             <text class="booking-label">手机号码</text>
             <text class="booking-value">{{item.phone || '—'}}</text>
           </view>
+          <view class="booking-information-row"><text class="booking-label">到访人数</text><text class="booking-value">{{item.visitorCount || '—'}} 人</text></view>
           <view class="booking-information-row booking-reference-row">
             <text class="booking-label">预约编号</text>
             <text class="booking-value booking-reference">{{item.bookingNo || '—'}}</text>

@@ -1,4 +1,4 @@
-# Collector’s Room Vol.2 预约小程序
+# collector's room 02 预约小程序
 
 原生微信小程序，通过 `wx.cloud.callContainer` 访问微信云托管 TF 服务。活动信息、日历状态、时段、预约创建、详情、列表及取消均来自后端接口。
 

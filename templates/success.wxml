@@ -2,8 +2,9 @@
     <view class="success-canvas" style="height: 100vh;">
     <image class="success-art" src="{{successArtSrc || activity.successUrl || '/assets/success.jpg'}}" mode="aspectFill"></image>
     <view class="success-overlay">
-      <image class="success-title-image" src="{{successTitleSrc || activity.titleUrl || '/assets/title.png'}}" mode="widthFix" aria-label="Collector’s Room Vol.2 / Tom Ford for Gucci and Yves Saint Laurent"></image>
+      <image class="success-title-image" src="{{successTitleSrc || activity.titleUrl || '/assets/title.png'}}" mode="widthFix" aria-label="collector's room 02 / Tom Ford for Gucci and Yves Saint Laurent"></image>
       <view class="success-details">
+        <text wx:if="{{reservation.visitorCount}}">到访人数：{{reservation.visitorCount}} 人</text>
         <text>{{reservation.dateText}}，{{reservation.time}}</text>
         <button class="address" bindtap="openVenueLocation" aria-label="打开活动地址地图">{{activity.address || venueAddress}}</button>
       </view>
