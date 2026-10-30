@@ -1,14 +1,13 @@
 <import src="../../templates/bookings.wxml" />
+<import src="../../templates/loading.wxml" />
 <page-meta page-style="overflow: {{view === 'main' && !showPolicy ? 'auto' : 'hidden'}};"></page-meta>
 <view class="app-shell">
-  <view wx:if="{{showStartupLoading}}" class="page-body loading-page startup-loading {{startupLoadingFading ? 'startup-loading--fading' : ''}}" catchtap="noop" catchtouchmove="noop">
-    <image class="loading-art" src="/assets/loading.png" mode="aspectFill" bindload="onStartupArtReady" binderror="onStartupArtReady" aria-label="GUCCI BY TOM FORD"></image>
-  </view>
+  <template is="startup-loading" data="{{showStartupLoading, startupLoadingFading}}"></template>
   <view wx:if="{{view === 'loading' && !showStartupLoading}}" class="page-body booking-check-page">
     <text>正在确认预约状态…</text>
   </view>
 
-  <view class="main-scroll {{view !== 'main' ? 'main-scroll--inactive' : ''}}">
+  <view class="main-scroll {{view !== 'main' || showStartupLoading ? 'main-scroll--inactive' : ''}}">
     <view class="main-content">
       <image
         wx:for="{{[activity.coverUrl || activity.exhibitUrl || '/assets/exhibition.jpg']}}"

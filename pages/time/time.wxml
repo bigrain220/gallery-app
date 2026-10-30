@@ -1,4 +1,6 @@
+<import src="../../templates/loading.wxml" />
 <view class="app-shell">
+  <template is="startup-loading" data="{{showStartupLoading, startupLoadingFading}}"></template>
   <view wx:if="{{view === 'time'}}" class="page-body picker-page">
     <scroll-view class="subpage-scroll picker-scroll" scroll-y>
       <view class="subpage time-page">

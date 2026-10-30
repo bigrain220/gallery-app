@@ -1,7 +1,7 @@
 {
   "appid": "wx4c8c483466acd3bb",
   "projectname": "tf-collectors-room-vol2",
-  "description": "collector's room 02 预约小程序",
+  "description": "Collector's Room 02 预约小程序",
   "compileType": "miniprogram",
   "miniprogramRoot": "./",
   "setting": {

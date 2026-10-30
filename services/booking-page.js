@@ -115,17 +115,37 @@ const definition = {
   },
 
   onShow() {
+    const resuming = startupLoading.resume(this)
+    const cycle = this.startupLoadingCycle || 0
+    const refreshing = this.refreshVisiblePage(resuming)
+    if (resuming && this.initialized) {
+      return Promise.resolve(refreshing).finally(() => {
+        if (cycle === (this.startupLoadingCycle || 0)) return startupLoading.finish(this)
+      })
+    }
+    return refreshing
+  },
+
+  refreshVisiblePage(resuming = false) {
     this.navigating = false
     const openedPage = this.openedPage
     this.openedPage = null
+    if (resuming && !this.initialized && this.pageType === 'main') return this.initialize()
+    if (resuming && this.initialized && this.pageType === 'date') return this.loadDates()
+    if (resuming && this.initialized && this.pageType === 'time') return this.loadSlots()
     if (this.initialized && this.pageType === 'main' && this.data.view === 'bookings') {
+      const sameForeground = this.detailForegroundVersion === (getApp().globalData.foregroundVersion || 0)
+      const confirmedBooking = openedPage === 'success' && sameForeground
+        ? this.data.bookings.find(item => sameId(item.id, this.confirmedBookingId) && isActiveBooking(item) && item.canCancel) : null
+      this.confirmedBookingId = null
       const returningFromDetails = openedPage === 'success'
-        && this.detailForegroundVersion === (getApp().globalData.foregroundVersion || 0)
+        && sameForeground
         && !this.resumeBookingsQuery
       this.resumeBookingsQuery = false
+      this.updateNavigationTitle()
       if (returningFromDetails) return
       this.setData({ showBookingSuccess: false })
-      return this.queryBookings()
+      return this.queryBookings({ confirmedBooking, skipIdentityCheck: !!confirmedBooking })
     }
     if (this.initialized && this.pageType === 'main') {
       const current = getApp().globalData.reservation
@@ -136,7 +156,7 @@ const definition = {
         ...(shouldCheck ? { view: 'loading', isCheckingBooking: true } : {}) })
       if (shouldCheck) return this.refreshHomeBooking()
     }
-    if (this.initialized && this.pageType === 'reservation' && this.data.view === 'success') this.refreshReservation()
+    if (this.initialized && this.pageType === 'reservation' && this.data.view === 'success') return this.refreshReservation()
   },
 
   onStartupArtReady() {
@@ -149,6 +169,8 @@ const definition = {
 
   onHide() {
     startupLoading.cancel(this)
+    this.refreshRequestId = (this.refreshRequestId || 0) + 1
+    if (this.data.isRefreshing) this.setData({ isRefreshing: false })
     if (this.data.view === 'bookings') {
       this.homeBookingRequestId = (this.homeBookingRequestId || 0) + 1
       this.bookingListRequestId = (this.bookingListRequestId || 0) + 1
@@ -162,11 +184,11 @@ const definition = {
 
   updateNavigationTitle() {
     const title = this.data.view === 'success' ? '预约详情' : this.data.view === 'bookings' ? '我的预约'
-      : (this.data.activity.name || this.data.activity.nameEn || "collector's room 02")
+      : (this.data.activity.name || this.data.activity.nameEn || "Collector's Room 02")
     wx.setNavigationBarTitle({ title })
   },
 
-  navigatePage(view, extra = {}) {
+  navigatePage(view, extra = {}, onOpened) {
     if (this.navigating || this.destroyed) return Promise.resolve(false)
     this.navigating = true
     const page = view === 'date' || view === 'time' ? view : 'reservation'
@@ -196,7 +218,12 @@ const definition = {
             this.setData({ selectedSlotId: selection.id, selectedTime: selection.value, draftSlotId: selection.id })
           }
         },
-        success: ({ eventChannel }) => { this.openedPage = view; eventChannel.emit('initialize', data); resolve(true) },
+        success: ({ eventChannel }) => {
+          this.openedPage = view
+          if (onOpened) onOpened()
+          eventChannel.emit('initialize', data)
+          resolve(true)
+        },
         fail: () => {
           if (getApp().globalData.detailPreview === data) getApp().globalData.detailPreview = null
           this.navigating = false; this.toast('页面打开失败，请重试'); resolve(false)
@@ -210,6 +237,27 @@ const definition = {
     this.setData({ view: 'bookings', showBookingSuccess: bookingCreated })
     this.updateNavigationTitle()
     return this.queryBookings()
+  },
+
+  async showConfirmedBooking() {
+    let returnPageReady
+    const opened = await this.navigatePage('success', {}, () => {
+      if (this.destroyed || this.pageType !== 'main') return
+      const reservation = this.data.reservation
+      this.confirmedBookingId = reservation.id
+      this.resumeBookingsQuery = true
+      // 详情入栈后预先渲染返回目标，原生返回动画不能露出已清空的表单。
+      // 此处只更新隐藏页的数据，不修改当前详情页的原生导航标题。
+      returnPageReady = new Promise(resolve => this.setData({
+        view: 'bookings', isBookingRoot: true, bookingPhone: reservation.phone,
+        bookings: [reservation], hasQueriedBookings: true, bookingError: '',
+        isLoadingBookings: false, isCheckingBooking: false, showBookingSuccess: false
+      }, resolve))
+    })
+    // 原生页面打开失败时仍保留已确认预约，提供列表中的详情重试入口。
+    if (!opened && !this.destroyed) return this.showBookingList(true)
+    if (returnPageReady) await returnPageReady
+    return opened
   },
 
   async enterBookingRoot(bookingCreated = false) {
@@ -240,6 +288,7 @@ const definition = {
       if (!this.destroyed) wx.navigateBack({ delta: getCurrentPages().length - 1 })
       return true
     }
+    this.confirmedBookingId = null
     this.homeBookingRequestId = (this.homeBookingRequestId || 0) + 1
     this.bookingListRequestId = (this.bookingListRequestId || 0) + 1
     this.setData({ view: 'main', isBookingRoot: false, isLoadingBookings: false, isCheckingBooking: false,
@@ -543,7 +592,7 @@ const definition = {
     if (current && current.canCancel) {
       this.applyReservation(current)
       this.clearReservationForm()
-      await this.showBookingList()
+      await this.showConfirmedBooking()
       return this.toast('您已有有效预约')
     }
     if (!name.trim()) return this.toast('请填写姓名')
@@ -569,7 +618,7 @@ const definition = {
       if (this.destroyed) return
       this.applyReservation(reservation)
       this.clearReservationForm()
-      await this.showBookingList(true)
+      await this.showConfirmedBooking()
     } catch (error) {
       if (this.destroyed) return
       // 包含超时等结果未知的情形：先向后端确认是否已经创建。
@@ -596,7 +645,7 @@ const definition = {
       if (!reservation || this.destroyed) return false
       this.applyReservation(reservation)
       this.clearReservationForm()
-      await this.showBookingList(true)
+      await this.showConfirmedBooking()
       return true
     } catch (error) {
       return false

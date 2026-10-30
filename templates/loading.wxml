@@ -1,0 +1,5 @@
+<template name="startup-loading">
+  <view hidden="{{!showStartupLoading}}" class="page-body loading-page startup-loading {{startupLoadingFading ? 'startup-loading--fading' : ''}}" catchtap="noop" catchtouchmove="noop">
+    <image class="loading-art" src="/assets/loading.png" mode="aspectFill" bindload="onStartupArtReady" binderror="onStartupArtReady" aria-label="GUCCI BY TOM FORD"></image>
+  </view>
+</template>

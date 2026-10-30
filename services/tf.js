@@ -65,9 +65,9 @@ async function getActivity() {
   return {
     ...record,
     titleUrl: '/assets/title.png',
-    name: "collector's room 02",
-    nameEn: "collector's room 02",
-    privacyPolicy: typeof record.privacyPolicy === 'string' ? record.privacyPolicy.replace(/collector[’']s room (?:vol\.?\s*2|2\.0)/gi, "collector's room 02") : record.privacyPolicy,
+    name: "Collector's Room 02",
+    nameEn: "Collector's Room 02",
+    privacyPolicy: typeof record.privacyPolicy === 'string' ? record.privacyPolicy.replace(/collector[’']s room (?:vol\.?\s*2|2\.0)/gi, "Collector's Room 02") : record.privacyPolicy,
     maxVisitorCount: Number.isInteger(record.maxVisitorCount) && record.maxVisitorCount > 0 ? record.maxVisitorCount : 5,
     wechat: typeof record.wechat === 'string' ? record.wechat.trim() : '',
     redbook: typeof record.redbook === 'string' ? record.redbook.trim() : '',

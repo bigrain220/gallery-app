@@ -2,7 +2,7 @@
     <view class="success-canvas" style="height: 100vh;">
     <image class="success-art" src="{{successArtSrc || activity.successUrl || '/assets/success.jpg'}}" mode="aspectFill"></image>
     <view class="success-overlay">
-      <image class="success-title-image" src="{{successTitleSrc || activity.titleUrl || '/assets/title.png'}}" mode="widthFix" aria-label="collector's room 02 / Tom Ford for Gucci and Yves Saint Laurent"></image>
+      <image class="success-title-image" src="{{successTitleSrc || activity.titleUrl || '/assets/title.png'}}" mode="widthFix" aria-label="Collector's Room 02 / Tom Ford for Gucci and Yves Saint Laurent"></image>
       <view class="success-details">
         <text wx:if="{{reservation.visitorCount}}">到访人数：{{reservation.visitorCount}} 人</text>
         <text>{{reservation.dateText}}，{{reservation.time}}</text>

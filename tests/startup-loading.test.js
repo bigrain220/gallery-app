@@ -155,3 +155,55 @@ test('the fade clock starts after the view acknowledges the style update, not be
   await finished
   assert.equal(instance.data.showStartupLoading, false)
 })
+
+test('app background prepares the cover before resume and excludes time spent hidden from the display time', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 })
+  const instance = page()
+  instance.data.showStartupLoading = false
+  loading.artReady(instance)
+  loading.prepareForBackground(instance)
+  assert.equal(instance.data.showStartupLoading, true)
+  assert.equal(instance.data.startupLoadingFading, false)
+  t.mock.timers.tick(60000)
+  await loading.finish(instance)
+  assert.equal(instance.data.showStartupLoading, true, 'background responses cannot dismiss the prepared cover')
+  assert.equal(loading.resume(instance), true)
+  assert.equal(loading.resume(instance), false, 'normal page navigation must not restart the cover')
+  const resumed = loading.finish(instance)
+  t.mock.timers.tick(1199)
+  await Promise.resolve()
+  assert.equal(instance.data.startupLoadingFading, false)
+  t.mock.timers.tick(1)
+  await Promise.resolve()
+  assert.equal(instance.data.startupLoadingFading, true)
+  t.mock.timers.tick(180)
+  await resumed
+  assert.equal(instance.data.showStartupLoading, false)
+})
+
+test('an old fade cannot remove the background cover, even when its rendering callback arrives late', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 })
+  const instance = page()
+  const rendered = []
+  instance.setData = function(patch, callback) { Object.assign(this.data, patch); if (callback) rendered.push(callback) }
+  t.mock.timers.tick(1200)
+  const previous = loading.finish(instance)
+  loading.prepareForBackground(instance)
+  rendered[0]()
+  t.mock.timers.tick(5000)
+  await previous
+  assert.equal(instance.data.showStartupLoading, true)
+  assert.equal(instance.data.startupLoadingFading, false)
+  assert.equal(instance.startupLoadingWait, null)
+})
+
+test('a background transition between loading phases prevents stale completion from fading the new cover', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 })
+  const instance = page()
+  const previous = loading.finish(instance)
+  t.mock.timers.tick(1200)
+  loading.prepareForBackground(instance)
+  await previous
+  assert.equal(instance.data.showStartupLoading, true)
+  assert.equal(instance.data.startupLoadingFading, false)
+})

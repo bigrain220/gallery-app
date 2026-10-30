@@ -1,10 +1,9 @@
 <import src="../../templates/bookings.wxml" />
 <import src="../../templates/success.wxml" />
+<import src="../../templates/loading.wxml" />
 <page-meta page-style="background-color: {{view === 'bookings' ? '#f7f7f5' : '#050505'}};"></page-meta>
 <view class="app-shell {{view === 'success' ? 'reservation-shell--dark' : ''}}">
-  <view wx:if="{{showStartupLoading}}" class="page-body loading-page startup-loading {{startupLoadingFading ? 'startup-loading--fading' : ''}}" catchtap="noop" catchtouchmove="noop">
-    <image class="loading-art" src="/assets/loading.png" mode="aspectFill" bindload="onStartupArtReady" binderror="onStartupArtReady" aria-label="GUCCI BY TOM FORD"></image>
-  </view>
+  <template is="startup-loading" data="{{showStartupLoading, startupLoadingFading}}"></template>
   <view wx:if="{{view === 'loading'}}" class="page-body loading-page">
     <image class="loading-art" src="/assets/loading.png" mode="aspectFill" aria-label="GUCCI BY TOM FORD"></image>
   </view>

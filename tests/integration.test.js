@@ -13,6 +13,9 @@ let pageDefinition
 global.Page = (definition) => { pageDefinition = definition }
 require('../pages/index/index')
 const createPage = require('../services/booking-page')
+let appDefinition
+global.App = definition => { appDefinition = definition }
+require('../app')
 let calls, notices, app, storage, respond
 let pageStack, pageLoads, pageScrolls
 const activity = { name: 'Test event', startDate: [2099, 12, 20], endDate: [2100, 1, 10], openTime: [11, 0], closeTime: [20, 0] }
@@ -66,7 +69,7 @@ function readyForm() {
 beforeEach(() => {
   calls = []
   notices = []
-  app = { globalData: { user: null, reservation: null } }
+  app = { ...appDefinition, globalData: { user: null, reservation: null, foregroundVersion: 0 } }
   storage = new Map()
   pageStack = []
   pageLoads = []
@@ -339,6 +342,123 @@ test('returning to foreground during the first lookup refreshes status instead o
   await initializing
   assert.equal(home.data.activeReservation.id, booking.id)
   assert.equal(home.data.isCheckingBooking, false)
+})
+
+test('app exit covers the form before re-entry and keeps it covered until the foreground lookup finishes', async () => {
+  const home = readyForm()
+  const pending = deferred()
+  const original = respond
+  respond = options => options.path.endsWith('/get-by-openid') ? pending.promise : original(options)
+  app.onHide()
+  home.onHide()
+  assert.equal(home.data.showStartupLoading, true)
+  assert.equal(home.data.view, 'main', 'the cover preserves the mounted form and its draft')
+  app.onShow()
+  const shown = home.onShow()
+  assert.equal(home.data.showStartupLoading, true)
+  assert.equal(home.data.view, 'loading')
+  pending.resolve(ok(null))
+  await shown
+  assert.equal(home.data.showStartupLoading, false)
+  assert.equal(home.data.view, 'main')
+  assert.equal(home.data.name, ' 测试预约 ')
+  assert.equal(home.data.selectedSlotId, slots[0].id)
+  assert.equal(home.data.consented, true)
+  assert.equal(pageStack.length, 1)
+})
+
+test('foreground booking failures reveal the retry state only after the prepared cover', async () => {
+  const home = readyForm()
+  const pending = deferred()
+  respond = () => pending.promise
+  app.onHide()
+  home.onHide()
+  app.onShow()
+  const shown = home.onShow()
+  assert.equal(home.data.showStartupLoading, true)
+  pending.resolve({ statusCode: 503, data: {} })
+  await shown
+  assert.equal(home.data.showStartupLoading, false)
+  assert.equal(home.data.view, 'error')
+  assert.ok(home.data.errorMessage)
+})
+
+test('reopening after activity initialization failed retries under the cover instead of leaving it stuck', async () => {
+  const home = page()
+  const original = respond
+  respond = () => Promise.reject(new Error('network unavailable'))
+  await home.initialize()
+  assert.equal(home.data.view, 'error')
+  assert.equal(home.initialized, undefined)
+  app.onHide()
+  home.onHide()
+  respond = original
+  app.onShow()
+  await home.onShow()
+  assert.equal(home.data.showStartupLoading, false)
+  assert.equal(home.data.view, 'main')
+  assert.equal(home.initialized, true)
+})
+
+test('repeated exits from booking details keep the cover until the latest foreground request finishes', async () => {
+  await readyForm().submitReservation()
+  await settlePages()
+  const detail = activePage()
+  const previous = deferred()
+  const latest = deferred()
+  let requests = 0
+  const original = respond
+  respond = options => options.path.includes('/booking/get?')
+    ? (++requests === 1 ? previous.promise : latest.promise) : original(options)
+  app.onHide()
+  detail.onHide()
+  assert.equal(detail.data.showStartupLoading, true)
+  app.onShow()
+  const oldRefresh = detail.onShow()
+  app.onHide()
+  detail.onHide()
+  app.onShow()
+  const shown = detail.onShow()
+  assert.equal(detail.data.view, 'success')
+  assert.equal(detail.data.showStartupLoading, true)
+  assert.equal(requests, 2)
+  previous.resolve(ok({...booking, status: 1}))
+  await oldRefresh
+  assert.equal(detail.data.reservation.status, 0)
+  assert.equal(detail.data.showStartupLoading, true)
+  latest.resolve(ok(booking))
+  await shown
+  assert.equal(detail.data.showStartupLoading, false)
+  assert.equal(detail.data.reservation.id, booking.id)
+  assert.equal(pageStack.length, 2)
+})
+
+test('only app exit arms the cover on pickers; ordinary navigation preserves the form without replaying loading', async () => {
+  const form = readyForm()
+  form.setData({activity: {startDate: '2099-12-20', endDate: '2099-12-20'}})
+  const original = respond
+  respond = options => options.path.includes('/month-status') ? ok([{date: '2099-12-20', status: 0}]) : original(options)
+  for (const pickerType of ['date', 'time']) {
+    await form.openPicker(event({picker: pickerType}))
+    await settlePages()
+    const picker = activePage()
+    assert.equal(form.data.showStartupLoading, false)
+    assert.equal(picker.data.showStartupLoading, false)
+    const draft = pickerType === 'date' ? picker.data.draftDateValue : picker.data.draftSlotId
+    app.onHide()
+    picker.onHide()
+    assert.equal(picker.data.showStartupLoading, true)
+    assert.equal(form.data.showStartupLoading, false, 'app exit covers only the currently visible page')
+    app.onShow()
+    await picker.onShow()
+    assert.equal(picker.data.showStartupLoading, false)
+    assert.equal(pickerType === 'date' ? picker.data.draftDateValue : picker.data.draftSlotId, draft)
+    wx.navigateBack()
+    await settlePages()
+    assert.equal(activePage(), form)
+    assert.equal(form.data.showStartupLoading, false)
+    assert.equal(form.data.phone, '13800138000')
+  }
 })
 
 test('cancelled, checked-in and expired history does not replace the booking form', async () => {
@@ -624,8 +744,9 @@ test('returning from details resumes an initial list query interrupted by naviga
   let listRequests = 0
   respond = options => options.path.includes('/get-by-openid') ? ok(booking)
     : options.path.includes('/list-by-phone') ? (++listRequests === 1 ? pendingList.promise : ok([booking])) : original(options)
-  await readyForm().submitReservation()
-  const root = activePage()
+  const root = readyForm()
+  root.applyReservation(api.normalizeBooking(booking))
+  await root.enterBookingRoot(true)
   assert.equal(root.data.isLoadingBookings, true)
   await root.viewBooking(event({id: booking.id}))
   pendingList.resolve(ok([booking]))
@@ -786,16 +907,15 @@ test('confirmed submission clears all form values and details or restart cannot 
   }
   await instance.submitReservation()
   await settlePages()
-  assert.equal(activePage().data.view, 'bookings')
+  assert.equal(activePage().data.view, 'success')
   assert.equal(activePage().data.reservation.phone, booking.userPhone)
   assert.equal(activePage().data.reservation.time, '13:00-14:00')
   assertEmpty(instance)
-  assert.equal(activePage().data.isBookingRoot, true)
-  assert.equal(activePage().data.bookings.length, 1)
-  await activePage().viewBooking(event({ id: booking.id }))
-  await settlePages()
   activePage().returnToForm()
   await settlePages()
+  assert.equal(activePage(), instance)
+  assert.equal(instance.data.isBookingRoot, true)
+  assert.equal(instance.data.bookings.length, 1)
   assertEmpty(instance)
   assert.equal(localState.getBookingReference().id, booking.id)
   assert.equal(localState.getProfile().phone, booking.userPhone)
@@ -825,18 +945,26 @@ test('failed submission keeps the completed form available for retry', async () 
   assert.equal(localState.getBookingReference(), null)
 })
 
-test('submit sends documented required fields and opens the list, while double tap creates once', async () => {
+test('submit sends documented required fields and opens design details directly, while double tap creates once', async () => {
   const instance = readyForm()
+  const nativeNavigate = wx.navigateTo
+  wx.navigateTo = options => {
+    assert.equal(instance.data.view, 'main', 'submission must open details before preparing the hidden list')
+    nativeNavigate(options)
+  }
   await Promise.all([instance.submitReservation(), instance.submitReservation()])
   await settlePages()
   const creates = calls.filter((options) => options.path.endsWith('/create'))
   assert.equal(creates.length, 1)
   assert.deepEqual(creates[0].data, { name: '测试预约', phone: '13800138000', visitorCount: 1, date: '2099-12-20', slotId: slots[0].id })
-  assert.equal(activePage().data.view, 'bookings')
-  assert.equal(activePage().data.bookings[0].bookingNo, booking.bookingNo)
-  assert.equal(calls.some(options => options.path.includes('/booking/get?')), false)
-  assert.equal(activePage().data.showBookingSuccess, true)
-  assert.equal(pageStack.length, 1)
+  assert.equal(activePage().pageType, 'reservation')
+  assert.equal(activePage().data.view, 'success')
+  assert.equal(activePage().data.reservation.bookingNo, booking.bookingNo)
+  assert.equal(calls.some(options => options.path.includes('/booking/get?')), true)
+  assert.equal(calls.some(options => options.path.includes('/list-by-phone')), false)
+  assert.equal(instance.data.view, 'bookings', 'the hidden return page must be ready before the user goes back')
+  assert.equal(instance.data.bookings[0].bookingNo, booking.bookingNo)
+  assert.equal(pageStack.length, 2)
 })
 
 test('detail failure after successful create retains success and prevents a second create', async () => {
@@ -847,9 +975,6 @@ test('detail failure after successful create retains success and prevents a seco
   }
   const instance = readyForm()
   await instance.submitReservation()
-  await settlePages()
-  assert.equal(activePage().data.view, 'bookings')
-  await activePage().viewBooking(event({id: booking.id}))
   await settlePages()
   assert.equal(activePage().data.view, 'success')
   assert.ok(activePage().data.detailError)
@@ -863,58 +988,116 @@ test('detail failure after successful create retains success and prevents a seco
   assert.equal(calls.filter((options) => options.path.endsWith('/create')).length, 1)
 })
 
-test('submission immediately shows the root list and confirmed card while the list endpoint is pending', async () => {
-  const pendingList = deferred()
+test('submission immediately opens populated design details while the detail endpoint is pending', async () => {
+  const pendingDetail = deferred()
   const original = respond
-  respond = options => options.path.includes('/list-by-phone') ? pendingList.promise : original(options)
+  respond = options => options.path.includes('/booking/get?') ? pendingDetail.promise
+    : options.path.includes('/get-by-openid') ? ok(booking) : original(options)
   const form = readyForm()
-  wx.reLaunch = () => assert.fail('successful submission must stay on the entry page')
+  wx.reLaunch = () => assert.fail('successful submission must preserve the entry page')
   await form.submitReservation()
-  const root = activePage()
-  assert.equal(root, form)
-  assert.equal(root.data.view, 'bookings')
-  assert.equal(root.data.isBookingRoot, true)
-  assert.equal(root.data.showBookingSuccess, true)
-  assert.equal(root.data.bookings[0].id, booking.id)
-  assert.equal(root.data.isLoadingBookings, true)
-  assert.equal(pageStack.length, 1)
-  assert.equal(calls.some(options => options.path.includes('/booking/get?')), false)
+  const detail = activePage()
+  assert.equal(detail.pageType, 'reservation')
+  assert.equal(detail.data.view, 'success')
+  assert.equal(detail.data.reservation.id, booking.id)
+  assert.equal(detail.data.reservation.dateText, api.formatDate('2099-12-20'))
+  assert.equal(detail.data.reservation.time, '13:00-14:00')
+  assert.equal(detail.data.reservation.visitorCount, 1)
+  assert.equal(detail.data.isRefreshing, true)
+  assert.equal(detail.data.showStartupLoading, false)
+  assert.equal(pageStack.length, 2)
+  assert.equal(calls.some(options => options.path.includes('/list-by-phone')), false)
   assert.equal(pageScrolls.length, 0)
-  pendingList.resolve(ok([]))
+  pendingDetail.resolve(ok(booking))
   await settlePages()
-  assert.equal(root.data.bookings.length, 1, 'a just-confirmed booking survives list replication delay')
-  assert.equal(root.data.isLoadingBookings, false)
+  assert.equal(detail.data.isRefreshing, false)
   assert.equal(Boolean(form.destroyed), false)
   wx.navigateBack()
-  assert.equal(activePage(), root)
+  await settlePages()
+  assert.equal(activePage(), form)
+  assert.equal(form.data.view, 'bookings')
+  assert.equal(form.data.bookings[0].id, booking.id)
 })
 
-test('successful submission never automatically opens a detail page; explicit detail failure retains the list', async () => {
+test('native back from a newly confirmed booking starts on the prepared list even while detail and list requests are pending', async () => {
+  const pendingDetail = deferred()
+  const pendingList = deferred()
+  const original = respond
+  respond = options => options.path.includes('/booking/get?') ? pendingDetail.promise
+    : options.path.includes('/list-by-phone') ? pendingList.promise : original(options)
+  const root = readyForm()
+  const states = []
+  const setData = root.setData
+  root.setData = function(patch, callback) { states.push(patch); setData.call(this, patch, callback) }
+  await root.submitReservation()
+  assert.equal(activePage().data.view, 'success')
+  assert.equal(root.data.view, 'bookings', 'the native back gesture reveals this already-rendered page before onShow')
+  assert.equal(root.data.bookings[0].id, booking.id)
+  assert.equal(root.data.hasQueriedBookings, true)
+  assert.equal(calls.some(options => options.path.includes('/list-by-phone')), false)
+  states.length = 0
+  wx.navigateBack()
+  assert.equal(activePage(), root)
+  assert.equal(root.data.view, 'bookings')
+  assert.equal(root.data.bookings[0].id, booking.id)
+  assert.equal(root.data.isLoadingBookings, true)
+  pendingDetail.resolve(ok({...booking, status: 1}))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(root.data.bookings[0].status, 0, 'a late response from the closed detail page cannot replace the confirmed card')
+  pendingList.resolve(ok([]))
+  await settlePages()
+  assert.equal(root.data.bookings[0].id, booking.id, 'the confirmed card survives list replication delay')
+  assert.equal(root.data.showStartupLoading, false)
+  assert.equal(states.some(patch => patch.view === 'main' || patch.view === 'loading'), false)
+  assert.equal(calls.some(options => options.path.includes('/get-by-openid')), false)
+})
+
+test('the first return from new booking details still checks identity after an app foreground change', async () => {
+  const root = readyForm()
+  await root.submitReservation()
+  await settlePages()
+  assert.equal(root.data.view, 'bookings')
+  app.globalData.foregroundVersion += 1
+  wx.navigateBack()
+  await settlePages()
+  assert.equal(calls.filter(options => options.path.includes('/get-by-openid')).length, 1)
+  assert.equal(activePage(), root)
+  assert.equal(root.data.view, 'main', 'an authoritative cancellation elsewhere still restores the form')
+})
+
+test('failed automatic detail navigation retains the confirmed booking and allows retry from the list', async () => {
   let navigationAttempts = 0
   wx.navigateTo = options => { navigationAttempts += 1; options.fail({errMsg: 'navigateTo:fail'}) }
   await readyForm().submitReservation()
   await settlePages()
   const root = activePage()
-  assert.equal(navigationAttempts, 0)
+  assert.equal(navigationAttempts, 1)
   assert.equal(root.data.view, 'bookings')
   assert.equal(root.data.bookings.length, 1)
   await root.viewBooking(event({id: booking.id}))
-  assert.equal(navigationAttempts, 1)
+  assert.equal(navigationAttempts, 2)
   assert.equal(activePage(), root)
   assert.equal(root.navigating, false)
   assert.equal(app.globalData.detailPreview, null)
 })
 
-test('list failure after creation preserves the success notice and confirmed card, and retry recovers', async () => {
+test('list failure cannot block automatic details; returning to the list supports retry', async () => {
   const original = respond
   respond = options => options.path.includes('/list-by-phone') ? Promise.reject(new Error('network unavailable'))
     : options.path.includes('/get-by-openid') ? ok(booking) : original(options)
-  await readyForm().submitReservation()
+  const root = readyForm()
+  await root.submitReservation()
   await settlePages()
-  const root = activePage()
+  assert.equal(activePage().data.view, 'success')
+  assert.equal(activePage().data.reservation.id, booking.id)
+  assert.equal(calls.some(options => options.path.includes('/list-by-phone')), false)
+  wx.navigateBack()
   assert.equal(root.data.view, 'bookings')
-  assert.equal(root.data.showBookingSuccess, true)
   assert.equal(root.data.bookings[0].id, booking.id)
+  await settlePages()
+  assert.equal(activePage(), root)
+  assert.equal(root.data.view, 'bookings')
+  assert.equal(root.data.bookings[0].id, booking.id, 'a failed first list refresh must retain the confirmed card')
   assert.ok(root.data.bookingError)
   respond = options => options.path.includes('/get-by-openid') ? ok(booking) : original(options)
   await root.queryBookings()
@@ -923,36 +1106,33 @@ test('list failure after creation preserves the success notice and confirmed car
   assert.equal(calls.filter(options => options.path.endsWith('/create')).length, 1)
 })
 
-test('submission does not wait for detail artwork; an explicit detail tap still receives a populated first frame', async () => {
+test('automatic details receive a populated first frame without waiting for artwork', async () => {
   const imageRequests = []
   wx.getImageInfo = options => imageRequests.push(options)
   const form = readyForm()
   form.setData({activity: {successUrl: 'https://example.com/art.jpg', titleUrl: 'https://example.com/title.png'}})
   const artwork = form.prepareSuccessArtwork()
-  await form.submitReservation()
-  await settlePages()
-  const root = activePage()
-  assert.equal(root.data.view, 'bookings')
-  assert.equal(root.data.bookings[0].id, booking.id)
-  assert.equal(imageRequests.length, 2)
-  imageRequests[0].success({path: '/tmp/cached-success.jpg'})
-  imageRequests[1].success({path: '/tmp/cached-title.png'})
-  await artwork
-  await new Promise(resolve => setImmediate(resolve))
   const nativeNavigate = wx.navigateTo
   let firstFrame
   wx.navigateTo = options => nativeNavigate({ ...options, success: result => {
     firstFrame = structuredClone(activePage().data)
     options.success(result)
   }})
-  await root.viewBooking(event({id: booking.id}))
+  await form.submitReservation()
   await settlePages()
+  assert.equal(activePage().pageType, 'reservation')
   assert.equal(firstFrame.view, 'success')
   assert.equal(firstFrame.reservation.id, booking.id)
-  assert.equal(firstFrame.successArtSrc, '/tmp/cached-success.jpg')
-  assert.equal(firstFrame.successTitleSrc, '/tmp/cached-title.png')
+  assert.equal(firstFrame.reservation.time, '13:00-14:00')
+  assert.equal(firstFrame.activity.successUrl, 'https://example.com/art.jpg')
+  assert.equal(firstFrame.activity.titleUrl, 'https://example.com/title.png')
+  assert.equal(imageRequests.length, 2)
+  imageRequests[0].success({path: '/tmp/cached-success.jpg'})
+  imageRequests[1].success({path: '/tmp/cached-title.png'})
+  await artwork
+  assert.equal(form.data.successArtSrc, '/tmp/cached-success.jpg')
+  assert.equal(form.data.successTitleSrc, '/tmp/cached-title.png')
   assert.equal(app.globalData.detailPreview, null)
-  assert.equal(root.data.showBookingSuccess, true, 'keep the notice in place to avoid shifting the list on return')
 })
 
 test('create timeout recovers actual active booking; newly full slot is never submitted', async () => {
@@ -965,7 +1145,8 @@ test('create timeout recovers actual active booking; newly full slot is never su
   const instance = readyForm()
   await instance.submitReservation()
   await settlePages()
-  assert.equal(activePage().data.view, 'bookings')
+  assert.equal(activePage().data.view, 'success')
+  assert.equal(activePage().data.reservation.id, booking.id)
   assert.equal(instance.data.name, '')
   assert.equal(instance.data.phone, '')
   assert.equal(instance.data.dateValue, '')
@@ -1225,7 +1406,7 @@ test('first-time visitors can book after an empty identity result without sendin
   instance.setData({ name: booking.userName, phone: booking.userPhone, dateValue: '2099-12-20', selectedSlotId: slots[0].id, selectedTime: '13:00-14:00', consented: true })
   await instance.submitReservation()
   await settlePages()
-  assert.equal(activePage().data.view, 'bookings')
+  assert.equal(activePage().data.view, 'success')
   const create = calls.find((options) => options.path.endsWith('/create'))
   assert.equal(Object.hasOwn(create.data, 'openid'), false)
 })
@@ -1486,7 +1667,7 @@ test('project has no cloud-function SDK, database, environment or configuration 
 
 test('every template event handler exists and WXML tags are balanced', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../app.json'), 'utf8'))
-  for (const route of [...manifest.pages, 'templates/success', 'templates/bookings']) {
+  for (const route of [...manifest.pages, 'templates/success', 'templates/bookings', 'templates/loading']) {
     const template = fs.readFileSync(path.join(__dirname, '..', route + '.wxml'), 'utf8')
     for (const match of template.matchAll(/(?:bind|catch)[\w:]*="([A-Za-z]\w*)"/g)) assert.equal(typeof pageDefinition[match[1]], 'function', match[1])
     const stack = []

@@ -1,6 +1,12 @@
+const startupLoading = require('./services/startup-loading')
+
 App({
   onShow() {
     this.globalData.foregroundVersion += 1
+  },
+  onHide() {
+    const pages = getCurrentPages()
+    startupLoading.prepareForBackground(pages[pages.length - 1])
   },
   onLaunch() {
     if (!wx.cloud || typeof wx.cloud.callContainer !== 'function') {

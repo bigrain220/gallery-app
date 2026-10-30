@@ -795,6 +795,11 @@
   padding-bottom: calc(64rpx + env(safe-area-inset-bottom));
 }
 
+.bookings-scroll--with-action .bookings-page {
+  padding-bottom: 204rpx;
+  padding-bottom: calc(204rpx + env(safe-area-inset-bottom));
+}
+
 .bookings-eyebrow,
 .bookings-title,
 .bookings-subtitle,
@@ -955,6 +960,32 @@
   font-size: 22rpx;
 }
 
+.booking-rebook-hint {
+  margin: 8rpx 0 28rpx;
+  padding: 22rpx 24rpx;
+  border-left: 4rpx solid #191919;
+  background: #f4f4f1;
+  color: #53534e;
+}
+
+.booking-rebook-hint-title,
+.booking-rebook-hint-copy {
+  display: block;
+}
+
+.booking-rebook-hint-title {
+  color: #272724;
+  font-size: 26rpx;
+  font-weight: 500;
+  line-height: 42rpx;
+}
+
+.booking-rebook-hint-copy {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 40rpx;
+}
+
 .booking-actions {
   display: flex;
   gap: 20rpx;
@@ -977,6 +1008,12 @@
   color: #575751;
   font-size: 24rpx;
   line-height: 36rpx;
+}
+
+.booking-button--rebook {
+  border-color: #191919;
+  color: #191919;
+  font-weight: 500;
 }
 
 .booking-button--primary {
@@ -1059,9 +1096,29 @@
   to { transform: rotate(360deg); }
 }
 
-.bookings-rebook {
+.bookings-action-bar {
+  position: fixed;
+  z-index: 20;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
-  margin-top: 40rpx;
+  box-sizing: border-box;
+  padding: 32rpx 40rpx 28rpx;
+  padding-bottom: calc(28rpx + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(247, 247, 245, 0) 0, rgba(247, 247, 245, 0.96) 32rpx, #f7f7f5 56rpx);
+  pointer-events: none;
+}
+
+.bookings-action-bar .booking-button {
+  height: 96rpx;
+  min-height: 44px;
+  border-radius: 8rpx;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.16);
+  font-size: 28rpx;
+  font-weight: 500;
+  line-height: 40rpx;
+  pointer-events: auto;
 }
 
 .bookings-footer {
