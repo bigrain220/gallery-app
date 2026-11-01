@@ -22,7 +22,7 @@ function write(key, data) {
 
 function getBookingReference() {
   const value = read(bookingKey, null)
-  return value && value.id !== undefined && value.id !== null && /^1\d{10}$/.test(value.phone || '') ? value : null
+  return value && value.id !== undefined && value.id !== null && /^1[3-9]\d{9}$/.test(value.phone || '') ? value : null
 }
 
 function clearBookingReference(id) {

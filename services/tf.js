@@ -111,9 +111,18 @@ async function getActiveBooking() {
   return reservation
 }
 
+async function getAuthorizedPhone(code) {
+  const result = await request('/tf/booking/phone-number', { method: 'POST', data: { code } })
+  const phone = result && result.purePhoneNumber
+  if (typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone) || String(result.countryCode) !== '86') {
+    throw serviceError('暂不支持该手机号，请手动填写中国大陆手机号。', 'INVALID_PHONE')
+  }
+  return phone
+}
+
 module.exports = {
   toDateStr, toTimeStr, toDateTimeStr, formatDate, todayInShanghai, normalizeBooking,
-  getActivity, getMonthStatus, getSlots, getActiveBooking,
+  getActivity, getMonthStatus, getSlots, getActiveBooking, getAuthorizedPhone,
   createBooking: (data) => request('/tf/booking/create', { method: 'POST', data }),
   getBooking: async (id, phone) => normalizeBooking(await request('/tf/booking/get', { data: { id, phone } })),
   listBookings: async (phone) => asList(await request('/tf/booking/list-by-phone', { data: { phone } })).map(normalizeBooking),

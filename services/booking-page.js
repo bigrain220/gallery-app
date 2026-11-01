@@ -54,6 +54,7 @@ const definition = {
     visitorCount: 1, visitorCountSelected: false, showVisitorOptions: false, visitorOptions: [],
     name: '',
     phone: '',
+    isGettingPhone: false,
     dateValue: '',
     dateText: '',
     draftDateValue: '',
@@ -432,9 +433,27 @@ const definition = {
     if (this.pageType === 'main') this.currentScrollTop = event.scrollTop
   },
 
+  async onGetPhoneNumber(event) {
+    if (this.data.isGettingPhone || this.data.isSubmitting) return
+    const detail = event.detail || {}
+    if (!detail.code || detail.errMsg !== 'getPhoneNumber:ok') {
+      if (!/deny|cancel/.test(detail.errMsg || '')) this.toast('手机号授权未完成，可重试或手动输入')
+      return
+    }
+    this.setData({ isGettingPhone: true })
+    try {
+      const phone = await api.getAuthorizedPhone(detail.code)
+      this.setData({ phone })
+    } catch (error) {
+      this.toast('获取手机号失败，请重新授权或手动输入')
+    } finally {
+      this.setData({ isGettingPhone: false })
+    }
+  },
+
   onInput(event) {
     const field = event.currentTarget.dataset.field
-    if (!['name', 'phone'].includes(field) || this.data.isSubmitting) return
+    if (!['name', 'phone'].includes(field) || this.data.isSubmitting || (field === 'phone' && this.data.isGettingPhone)) return
     this.setData({ [field]: event.detail.value })
   },
 
@@ -584,7 +603,7 @@ const definition = {
   },
 
   async submitReservation() {
-    if (this.data.isSubmitting) return
+    if (this.data.isSubmitting || this.data.isGettingPhone) return
     if (this.data.isCheckingBooking || this.data.bookingLookupError) return this.toast('请先确认预约状态')
     if (this.data.consented !== true) return this.toast('请阅读并同意隐私说明')
     const { name, phone, dateValue, selectedSlotId, visitorCount } = this.data
@@ -596,7 +615,7 @@ const definition = {
       return this.toast('您已有有效预约')
     }
     if (!name.trim()) return this.toast('请填写姓名')
-    if (!/^1\d{10}$/.test(phone.trim())) return this.toast('请填写正确的手机号码')
+    if (!/^1[3-9]\d{9}$/.test(phone.trim())) return this.toast('请填写正确的手机号码')
     if (!Number.isInteger(visitorCount) || visitorCount < 1 || visitorCount > (this.data.activity.maxVisitorCount || 5)) return this.toast('请选择有效的到访人数')
     if (!dateValue) return this.toast('请选择日期')
     if (selectedSlotId === '' || selectedSlotId === null || selectedSlotId === undefined) return this.toast('请选择时间')
@@ -679,7 +698,7 @@ const definition = {
     const profile = localState.getProfile()
     const bookingPhone = [current && current.phone, reference && reference.phone, profile.phone, this.data.phone]
       .map((value) => String(value || '').trim())
-      .find((value) => /^1\d{10}$/.test(value)) || ''
+      .find((value) => /^1[3-9]\d{9}$/.test(value)) || ''
     this.setData({ view: 'bookings', bookingPhone, isBookingRoot: false })
     this.updateNavigationTitle()
     return this.queryBookings()
@@ -711,7 +730,7 @@ const definition = {
           return
         }
         phone = active.phone
-        if (!/^1\d{10}$/.test(phone)) throw new Error('暂时无法获取预约信息，请稍后重试。')
+        if (!/^1[3-9]\d{9}$/.test(phone)) throw new Error('暂时无法获取预约信息，请稍后重试。')
         this.setData({ bookingPhone: phone })
       }
       const bookings = await api.listBookings(phone)

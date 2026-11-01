@@ -64,7 +64,10 @@
             <text class="field-cn">手机号码</text>
             <text class="field-en">PHONE NUMBER</text>
           </view>
-          <input class="field-input" value="{{phone}}" data-field="phone" bindinput="onInput" type="number" maxlength="11" cursor-spacing="24" disabled="{{isSubmitting}}" />
+          <view class="phone-input-row">
+          <input class="field-input" value="{{phone}}" data-field="phone" bindinput="onInput" type="number" maxlength="11" cursor-spacing="24" disabled="{{isSubmitting || isGettingPhone}}" />
+          <button class="phone-authorize" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" loading="{{isGettingPhone}}" disabled="{{isSubmitting || isGettingPhone}}">微信授权填入</button>
+          </view>
         </view>
 
         <view class="picker-row">

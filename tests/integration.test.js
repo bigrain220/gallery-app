@@ -1660,7 +1660,7 @@ test('project has no cloud-function SDK, database, environment or configuration 
   const sourceFiles = ['app.js', 'config/services.js', 'services/request.js', 'services/tf.js', 'services/local-state.js', 'pages/index/index.js', 'services/booking-page.js', 'pages/index/index.wxml']
   for (const file of sourceFiles) {
     const content = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')
-    assert.doesNotMatch(content, /callFunction|wx-server-sdk|cloud\.database|cloud1-|getPhoneNumber/)
+    assert.doesNotMatch(content, /callFunction|wx-server-sdk|cloud\.database|cloud1-/)
   }
   assert.equal(config.identityEnvId, undefined)
 })
@@ -1694,4 +1694,23 @@ test('visitor dropdown uses configured choices, selects and closes, and locks du
   instance.setData({ isSubmitting: true })
   instance.selectVisitorCount(event({ count: 1 }))
   assert.equal(instance.data.visitorCount, 2)
+})
+
+
+test('phone authorization fills the form and releases loading state', async () => {
+  const instance = readyForm()
+  const original = api.getAuthorizedPhone
+  api.getAuthorizedPhone = async (code) => {
+    assert.equal(code, 'phone-code')
+    return '13800138000'
+  }
+  try {
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+    assert.equal(instance.data.phone, '13800138000')
+    assert.equal(instance.data.isGettingPhone, false)
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:fail user deny' } })
+    assert.equal(instance.data.phone, '13800138000')
+  } finally {
+    api.getAuthorizedPhone = original
+  }
 })
