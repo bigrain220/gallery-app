@@ -52,6 +52,14 @@
       {
         "value": "移动端接口清单.md",
         "type": "file"
+      },
+      {
+        "value": "移动端接口清单(1).md",
+        "type": "file"
+      },
+      {
+        "value": "PHONE_AUTH.md",
+        "type": "file"
       }
     ],
     "include": []

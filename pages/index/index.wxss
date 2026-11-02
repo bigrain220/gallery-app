@@ -1290,7 +1290,101 @@
 .party-option { height: 56rpx; margin: 0; padding: 0 16rpx; border-radius: 0; background: #fff; text-align: left; color: #6a6a6a; font-size: 28rpx; font-weight: 300; line-height: 56rpx; }
 .party-option--selected { background: #d9d9d9; }
 
-.phone-input-row { display: flex; align-items: center; gap: 16rpx; }
-.phone-input-row .field-input { flex: 1; min-width: 0; }
-.phone-authorize { flex-shrink: 0; margin: 0; padding: 0 16rpx; font-size: 24rpx; line-height: 64rpx; color: #fff; background: #080808; border-radius: 0; }
+.phone-input-row {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+  box-sizing: border-box;
+  min-height: 44px;
+  border-bottom: 1rpx solid #b7b7b7;
+}
+
+.phone-input-row .field-input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 88rpx;
+  min-height: 44px;
+  padding: 0;
+  border-bottom: 0;
+  font-size: 32rpx;
+  font-weight: 400;
+}
+
+.phone-input-placeholder {
+  color: #a0a0a0;
+  font-size: 28rpx;
+  font-weight: 300;
+}
+
+.phone-authorize {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 156rpx;
+  box-sizing: border-box;
+  height: 88rpx;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 0 0 28rpx;
+  border-radius: 0;
+  background: transparent;
+  color: #161616;
+  font-size: 28rpx;
+  font-weight: 500;
+  line-height: 40rpx;
+  white-space: nowrap;
+}
+
+.phone-authorize::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 1rpx;
+  height: 28rpx;
+  background: #c9c9c9;
+  content: '';
+  transform: translateY(-50%);
+}
+
 .phone-authorize::after { border: 0; }
+.phone-authorize--pressed { opacity: 0.55; }
+.phone-input-row .phone-authorize.phone-authorize--disabled {
+  background: transparent;
+  color: #999;
+  opacity: 1;
+}
+
+.phone-authorize--loading .phone-authorize-label { visibility: hidden; }
+
+.phone-authorize-progress {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.phone-authorize-spinner {
+  box-sizing: border-box;
+  width: 28rpx;
+  height: 28rpx;
+  border: 3rpx solid #dedede;
+  border-top-color: #4a4a4a;
+  border-radius: 50%;
+  animation: phone-authorize-spin 0.85s linear infinite;
+}
+
+@keyframes phone-authorize-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-authorize-spinner { animation: none; }
+}

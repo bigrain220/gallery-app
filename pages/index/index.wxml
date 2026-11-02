@@ -65,8 +65,11 @@
             <text class="field-en">PHONE NUMBER</text>
           </view>
           <view class="phone-input-row">
-          <input class="field-input" value="{{phone}}" data-field="phone" bindinput="onInput" type="number" maxlength="11" cursor-spacing="24" disabled="{{isSubmitting || isGettingPhone}}" />
-          <button class="phone-authorize" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" loading="{{isGettingPhone}}" disabled="{{isSubmitting || isGettingPhone}}">微信授权填入</button>
+            <input class="field-input" value="{{phone}}" data-field="phone" bindinput="onInput" type="number" maxlength="11" cursor-spacing="24" placeholder="请输入手机号" placeholder-class="phone-input-placeholder" disabled="{{isSubmitting || isGettingPhone}}" />
+            <button class="phone-authorize {{isGettingPhone ? 'phone-authorize--loading' : ''}} {{isSubmitting || isGettingPhone ? 'phone-authorize--disabled' : ''}}" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" hover-class="phone-authorize--pressed" disabled="{{isSubmitting || isGettingPhone}}" aria-label="{{isGettingPhone ? '正在获取手机号' : '使用微信手机号填入'}}">
+              <text class="phone-authorize-label">微信填入</text>
+              <view wx:if="{{isGettingPhone}}" class="phone-authorize-progress" aria-hidden="true"><view class="phone-authorize-spinner"></view></view>
+            </button>
           </view>
         </view>
 
@@ -103,7 +106,7 @@
           </view>
         </view>
 
-        <button class="submit-button" bindtap="submitReservation" loading="{{isSubmitting}}" disabled="{{isSubmitting || !consented}}">提交</button>
+        <button class="submit-button" bindtap="submitReservation" loading="{{isSubmitting}}" disabled="{{isSubmitting || isGettingPhone || !consented}}">提交</button>
         <button class="my-bookings-button" bindtap="openMyBookings" disabled="{{isSubmitting}}">我的预约</button>
       </view>
     </view>

@@ -112,10 +112,32 @@ async function getActiveBooking() {
 }
 
 async function getAuthorizedPhone(code) {
-  const result = await request('/tf/booking/phone-number', { method: 'POST', data: { code } })
-  const phone = result && result.purePhoneNumber
-  if (typeof phone !== 'string' || !/^1[3-9]\d{9}$/.test(phone) || String(result.countryCode) !== '86') {
-    throw serviceError('暂不支持该手机号，请手动填写中国大陆手机号。', 'INVALID_PHONE')
+  if (typeof code !== 'string' || !code.trim()) {
+    throw serviceError('手机号授权未完成，请重新点击授权或手动输入', 'INVALID_PHONE_CODE')
+  }
+  let result
+  try {
+    // 授权 code 只能兑换一次；失败后由用户重新授权，不自动重试。
+    result = await request('/tf/booking/phone-number', { method: 'POST', data: { code } })
+  } catch (error) {
+    const messages = {
+      1060003001: '微信手机号服务暂不可用，请手动输入手机号',
+      1060003002: '手机号授权码无效或已过期，请重新点击授权',
+      1060003003: '获取微信手机号失败，请重新授权或手动输入',
+      1060003004: '暂不支持该手机号，请手动输入中国大陆手机号',
+      NETWORK_ERROR: '获取手机号请求未完成，请重新授权或手动输入'
+    }
+    if (messages[error.code]) throw serviceError(messages[error.code], error.code, error.statusCode)
+    throw error
+  }
+  if (!result || typeof result !== 'object' || Array.isArray(result) ||
+      typeof result.purePhoneNumber !== 'string' || !result.purePhoneNumber ||
+      !['string', 'number'].includes(typeof result.countryCode) || result.countryCode === '') {
+    throw serviceError('手机号服务返回数据异常，请重新授权或手动输入', 'INVALID_RESPONSE')
+  }
+  const phone = result.purePhoneNumber
+  if (!/^1[3-9]\d{9}$/.test(phone) || String(result.countryCode) !== '86') {
+    throw serviceError('暂不支持该手机号，请手动输入中国大陆手机号', 'INVALID_PHONE')
   }
   return phone
 }

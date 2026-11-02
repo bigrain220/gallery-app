@@ -408,12 +408,13 @@ const definition = {
   },
 
   clearReservationForm() {
+    this.phoneRequestId = (this.phoneRequestId || 0) + 1
     this.dateRequestId = (this.dateRequestId || 0) + 1
     this.slotRequestId = (this.slotRequestId || 0) + 1
     this.currentScrollTop = 0
     this.formScrollTop = 0
     this.setData({
-      visitorCount: 1, visitorCountSelected: false, showVisitorOptions: false, name: '', phone: '', dateValue: '', dateText: '', selectedTime: '', selectedSlotId: '',
+      visitorCount: 1, visitorCountSelected: false, showVisitorOptions: false, name: '', phone: '', isGettingPhone: false, dateValue: '', dateText: '', selectedTime: '', selectedSlotId: '',
       draftDateValue: '', draftSlotId: '', consented: false, timeSlots: [],
       dateError: '', slotError: '', bookingLookupError: '', isLoadingDates: false, isLoadingSlots: false,
       mainScrollTop: 0, showPolicy: false, policyContent: '', policyIsRichText: false
@@ -434,20 +435,29 @@ const definition = {
   },
 
   async onGetPhoneNumber(event) {
-    if (this.data.isGettingPhone || this.data.isSubmitting) return
-    const detail = event.detail || {}
-    if (!detail.code || detail.errMsg !== 'getPhoneNumber:ok') {
-      if (!/deny|cancel/.test(detail.errMsg || '')) this.toast('手机号授权未完成，可重试或手动输入')
+    if (this.destroyed || this.data.isGettingPhone || this.data.isSubmitting) return
+    const detail = event && event.detail || {}
+    if (typeof detail.code !== 'string' || !detail.code.trim() || detail.errMsg !== 'getPhoneNumber:ok') {
+      if (!/deny|cancel/i.test(detail.errMsg || '')) {
+        const undeclaredPrivacy = Number(detail.errno) === 112 || /api scope is not declared in the privacy agreement/i.test(detail.errMsg || '')
+        this.toast(undeclaredPrivacy
+          ? '小程序隐私指引未声明获取手机号，请联系管理员或手动输入'
+          : '手机号授权未完成，可重试或手动输入')
+      }
       return
     }
+    const requestId = this.phoneRequestId = (this.phoneRequestId || 0) + 1
     this.setData({ isGettingPhone: true })
     try {
       const phone = await api.getAuthorizedPhone(detail.code)
+      if (this.destroyed || requestId !== this.phoneRequestId) return
       this.setData({ phone })
     } catch (error) {
-      this.toast('获取手机号失败，请重新授权或手动输入')
+      if (!this.destroyed && requestId === this.phoneRequestId) {
+        this.toast(this.friendlyError(error, '获取手机号失败，请重新授权或手动输入'))
+      }
     } finally {
-      this.setData({ isGettingPhone: false })
+      if (!this.destroyed && requestId === this.phoneRequestId) this.setData({ isGettingPhone: false })
     }
   },
 

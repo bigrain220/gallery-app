@@ -85,6 +85,7 @@ beforeEach(() => {
     if (pathname.endsWith('/booking/get')) return ok(booking)
     if (pathname.endsWith('/list-by-phone')) return ok([booking])
     if (pathname.endsWith('/cancel')) return ok(true)
+    if (pathname.endsWith('/phone-number')) return ok({ purePhoneNumber: '13800138000', countryCode: '86' })
     if (pathname.endsWith('/month-status')) return ok([])
     throw new Error(`Unexpected request: ${options.path}`)
   }
@@ -145,11 +146,11 @@ beforeEach(() => {
   }
 })
 
-test('all 8 TF endpoints use the provided container, tenant, methods and payloads', async () => {
+test('all 9 TF endpoints use the provided container, tenant, methods and payloads', async () => {
   assert.equal((await api.getActivity()).startDate, '2099-12-20')
   await api.getMonthStatus('2099-12')
   await api.getSlots('2099-12-20')
-  const payload = { name: booking.userName, phone: booking.userPhone, date: '2099-12-20', slotId: slots[0].id }
+  const payload = { name: booking.userName, phone: booking.userPhone, visitorCount: 1, date: '2099-12-20', slotId: slots[0].id }
   assert.equal(await api.createBooking(payload), booking.id)
   const detail = await api.getBooking(booking.id, booking.userPhone)
   assert.equal(detail.date, '2099-12-20')
@@ -158,7 +159,8 @@ test('all 8 TF endpoints use the provided container, tenant, methods and payload
   assert.equal(await api.getActiveBooking(), null)
   assert.equal((await api.listBookings(booking.userPhone)).length, 1)
   assert.equal(await api.cancelBooking(booking.id, booking.userPhone), true)
-  assert.equal(calls.length, 8)
+  assert.equal(await api.getAuthorizedPhone('phone-code'), '13800138000')
+  assert.equal(calls.length, 9)
   for (const options of calls) {
     assert.deepEqual(options.config, { env: 'prod-d3giey1bt59348a38' })
     assert.equal(options.header['X-WX-SERVICE'], 'tf')
@@ -173,6 +175,10 @@ test('all 8 TF endpoints use the provided container, tenant, methods and payload
   assert.equal(calls[5].path, '/app-api/tf/booking/get-by-openid')
   assert.deepEqual(calls[7].data, { id: booking.id, phone: booking.userPhone })
   assert.equal(calls[7].method, 'POST')
+  assert.equal(calls[8].path, '/app-api/tf/booking/phone-number')
+  assert.equal(calls[8].method, 'POST')
+  assert.equal(calls[8].header['content-type'], 'application/json')
+  assert.deepEqual(calls[8].data, { code: 'phone-code' })
 })
 
 test('request handles JSON text, null, false, query encoding, HTTP errors and business errors', async () => {
@@ -1697,20 +1703,200 @@ test('visitor dropdown uses configured choices, selects and closes, and locks du
 })
 
 
-test('phone authorization fills the form and releases loading state', async () => {
+test('phone authorization only fills the phone without submitting, saving or changing consent', async () => {
   const instance = readyForm()
-  const original = api.getAuthorizedPhone
-  api.getAuthorizedPhone = async (code) => {
-    assert.equal(code, 'phone-code')
-    return '13800138000'
+  instance.setData({ phone: '13900139000', consented: false })
+  const before = structuredClone(instance.data)
+  await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+  assert.deepEqual(instance.data, { ...before, phone: '13800138000' })
+  assert.equal(calls.length, 1)
+  assert.equal(storage.size, 0)
+  assert.equal(app.globalData.user, null)
+  assert.equal(app.globalData.reservation, null)
+  assert.deepEqual(notices, [])
+})
+
+test('denied, cancelled, missing and legacy phone authorization never call the backend or clear the input', async () => {
+  const instance = readyForm()
+  for (const detail of [
+    { errMsg: 'getPhoneNumber:fail user deny' },
+    { errMsg: 'getPhoneNumber:fail user cancel' }
+  ]) await instance.onGetPhoneNumber({ detail })
+  assert.deepEqual(notices, [])
+  for (const detail of [undefined, {},
+    { errMsg: 'getPhoneNumber:ok', code: '' },
+    { errMsg: 'getPhoneNumber:ok', code: '   ' },
+    { errMsg: 'getPhoneNumber:ok', code: 123 },
+    { errMsg: 'getPhoneNumber:fail', code: 'phone-code' },
+    { errMsg: 'getPhoneNumber:ok', encryptedData: 'legacy', iv: 'legacy' }
+  ]) await instance.onGetPhoneNumber({ detail })
+  assert.equal(calls.length, 0)
+  assert.equal(instance.data.phone, '13800138000')
+  assert.equal(instance.data.isGettingPhone, false)
+  assert.ok(notices.every(message => message.includes('授权未完成')))
+})
+
+test('phone exchange rejects invalid codes before making a request', async () => {
+  for (const code of [undefined, null, '', '  ', 123, {}, []]) {
+    await assert.rejects(api.getAuthorizedPhone(code), { code: 'INVALID_PHONE_CODE' })
   }
-  try {
-    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+  assert.equal(calls.length, 0)
+})
+
+test('undeclared phone privacy scope identifies the platform configuration problem without exchanging a code', async () => {
+  const instance = readyForm()
+  for (const detail of [
+    { errMsg: 'getPhoneNumber:fail api scope is not declared in the privacy agreement', errno: 112 },
+    { errMsg: 'getPhoneNumber:fail api scope is not declared in the privacy agreement' },
+    { errMsg: 'getPhoneNumber:fail', errno: '112' }
+  ]) {
+    await instance.onGetPhoneNumber({ detail })
+    assert.equal(notices.at(-1), '小程序隐私指引未声明获取手机号，请联系管理员或手动输入')
     assert.equal(instance.data.phone, '13800138000')
     assert.equal(instance.data.isGettingPhone, false)
-    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:fail user deny' } })
-    assert.equal(instance.data.phone, '13800138000')
-  } finally {
-    api.getAuthorizedPhone = original
   }
+  assert.equal(calls.length, 0)
+  instance.onInput({ ...event({ field: 'phone' }), detail: { value: '13900139000' } })
+  assert.equal(instance.data.phone, '13900139000')
+})
+
+for (const [code, message] of [
+  [1060003001, '微信手机号服务暂不可用，请手动输入手机号'],
+  [1060003002, '手机号授权码无效或已过期，请重新点击授权'],
+  [1060003003, '获取微信手机号失败，请重新授权或手动输入'],
+  [1060003004, '暂不支持该手机号，请手动输入中国大陆手机号']
+]) {
+  test(`phone backend error ${code} keeps the input, gives an actionable message and permits manual entry`, async () => {
+    const instance = readyForm()
+    respond = async () => ({ statusCode: 200, data: { code, msg: '' } })
+    await assert.rejects(api.getAuthorizedPhone('phone-code'), { code, message, statusCode: 200 })
+    calls = []
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'new-phone-code' } })
+    assert.equal(calls.length, 1)
+    assert.equal(instance.data.phone, '13800138000')
+    assert.equal(instance.data.isGettingPhone, false)
+    assert.equal(notices.at(-1), message)
+    instance.onInput({ ...event({ field: 'phone' }), detail: { value: '13900139000' } })
+    assert.equal(instance.data.phone, '13900139000')
+  })
+}
+
+test('phone exchange preserves rate-limit and other backend errors', async () => {
+  const instance = readyForm()
+  for (const [statusCode, code, msg] of [
+    [429, 429, '操作过于频繁，请稍后重试。'],
+    [400, 400, '授权参数不正确'],
+    [200, 1060003005, '未获取到微信身份信息，请重新进入小程序']
+  ]) {
+    respond = async () => ({ statusCode, data: { code, msg } })
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+    assert.equal(notices.at(-1), msg)
+    assert.equal(instance.data.phone, '13800138000')
+    assert.equal(instance.data.isGettingPhone, false)
+  }
+  assert.equal(calls.length, 3)
+})
+
+test('invalid phone responses never overwrite the form', async () => {
+  const instance = readyForm()
+  instance.setData({ phone: '13900139000' })
+  for (const data of [null, {}, [], '13800138000',
+    { purePhoneNumber: 13800138000, countryCode: '86' },
+    { purePhoneNumber: '', countryCode: '86' },
+    { purePhoneNumber: '13800138000' },
+    { purePhoneNumber: '13800138000', countryCode: {} },
+    { purePhoneNumber: '13800138000', countryCode: '' }
+  ]) {
+    respond = async () => ok(data)
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+    assert.equal(instance.data.phone, '13900139000')
+    assert.equal(instance.data.isGettingPhone, false)
+    assert.match(notices.at(-1), /返回数据异常/)
+  }
+  for (const data of [
+    { purePhoneNumber: '13800138000', countryCode: '1' },
+    { purePhoneNumber: '+8613800138000', countryCode: '86' },
+    { purePhoneNumber: '12800138000', countryCode: '86' },
+    { purePhoneNumber: '1380013800', countryCode: '86' }
+  ]) {
+    respond = async () => ok(data)
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+    assert.equal(instance.data.phone, '13900139000')
+    assert.equal(instance.data.isGettingPhone, false)
+    assert.match(notices.at(-1), /暂不支持该手机号/)
+  }
+  respond = async () => ok({ purePhoneNumber: '13800138000', countryCode: 86 })
+  assert.equal(await api.getAuthorizedPhone('new-phone-code'), '13800138000')
+})
+
+test('phone timeout is not replayed and a new authorization can succeed', async () => {
+  const instance = readyForm()
+  respond = async () => { throw new Error('timeout') }
+  await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'old-phone-code' } })
+  assert.equal(calls.length, 1)
+  assert.equal(instance.data.phone, '13800138000')
+  assert.equal(instance.data.isGettingPhone, false)
+  assert.match(notices.at(-1), /重新授权或手动输入/)
+  respond = async () => ok({ purePhoneNumber: '13900139000', countryCode: '86' })
+  await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'new-phone-code' } })
+  assert.equal(instance.data.phone, '13900139000')
+  assert.deepEqual(calls.map(call => call.data), [{ code: 'old-phone-code' }, { code: 'new-phone-code' }])
+})
+
+test('pending phone authorization blocks duplicate exchange, phone edits and reservation submission', async () => {
+  const instance = readyForm()
+  const pending = deferred()
+  respond = () => pending.promise
+  const authorizing = instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+  assert.equal(instance.data.isGettingPhone, true)
+  await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'second-phone-code' } })
+  await instance.submitReservation()
+  instance.onInput({ ...event({ field: 'phone' }), detail: { value: '13900139000' } })
+  assert.equal(instance.data.phone, '13800138000')
+  assert.equal(calls.length, 1)
+  pending.resolve(ok({ purePhoneNumber: '13700137000', countryCode: '86' }))
+  await authorizing
+  assert.equal(instance.data.phone, '13700137000')
+  assert.equal(instance.data.isGettingPhone, false)
+  instance.setData({ isSubmitting: true })
+  await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'third-phone-code' } })
+  assert.equal(calls.length, 1)
+})
+
+test('a stale phone response cannot refill a cleared form or unlock a newer exchange', async () => {
+  const instance = readyForm()
+  const oldRequest = deferred()
+  const newRequest = deferred()
+  respond = () => calls.length === 1 ? oldRequest.promise : newRequest.promise
+  const oldAuthorization = instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'old-phone-code' } })
+  instance.clearReservationForm()
+  assert.equal(instance.data.isGettingPhone, false)
+  const newAuthorization = instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'new-phone-code' } })
+  oldRequest.resolve(ok({ purePhoneNumber: '13800138000', countryCode: '86' }))
+  await oldAuthorization
+  assert.equal(instance.data.phone, '')
+  assert.equal(instance.data.isGettingPhone, true)
+  newRequest.resolve(ok({ purePhoneNumber: '13900139000', countryCode: '86' }))
+  await newAuthorization
+  assert.equal(instance.data.phone, '13900139000')
+  assert.equal(instance.data.isGettingPhone, false)
+})
+
+test('phone responses after page unload do not update the page or show errors', async () => {
+  for (const response of [ok({ purePhoneNumber: '13900139000', countryCode: '86' }),
+    { statusCode: 200, data: { code: 1060003002, msg: '授权码已使用' } }
+  ]) {
+    const instance = readyForm()
+    const pending = deferred()
+    respond = () => pending.promise
+    const authorizing = instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'phone-code' } })
+    instance.onUnload()
+    instance.setData = () => assert.fail('unloaded page must not be updated')
+    pending.resolve(response)
+    await authorizing
+    await instance.onGetPhoneNumber({ detail: { errMsg: 'getPhoneNumber:ok', code: 'new-phone-code' } })
+    assert.equal(instance.data.phone, '13800138000')
+  }
+  assert.equal(calls.length, 2)
+  assert.deepEqual(notices, [])
 })
