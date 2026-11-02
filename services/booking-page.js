@@ -1,6 +1,7 @@
 const api = require('./tf')
 const localState = require('./local-state')
 const startupLoading = require('./startup-loading')
+const sharing = require('./sharing')
 const loadSuccessArtwork = require('./success-artwork')
 const venue = require('../config/venue')
 const { getVenueLocation } = require('./location')
@@ -116,6 +117,7 @@ const definition = {
   },
 
   onShow() {
+    sharing.showMenu(this)
     const resuming = startupLoading.resume(this)
     const cycle = this.startupLoadingCycle || 0
     const refreshing = this.refreshVisiblePage(resuming)
@@ -125,6 +127,10 @@ const definition = {
       })
     }
     return refreshing
+  },
+
+  onShareAppMessage() {
+    return sharing.appMessage(this.data.activity)
   },
 
   refreshVisiblePage(resuming = false) {
@@ -169,6 +175,7 @@ const definition = {
   },
 
   onHide() {
+    sharing.releaseCopyUrl(this)
     startupLoading.cancel(this)
     this.refreshRequestId = (this.refreshRequestId || 0) + 1
     if (this.data.isRefreshing) this.setData({ isRefreshing: false })
@@ -302,6 +309,7 @@ const definition = {
   },
 
   onUnload() {
+    sharing.releaseCopyUrl(this)
     this.destroyed = true
     startupLoading.cancel(this)
     this.dateRequestId = (this.dateRequestId || 0) + 1

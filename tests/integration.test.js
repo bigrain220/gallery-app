@@ -17,7 +17,7 @@ let appDefinition
 global.App = definition => { appDefinition = definition }
 require('../app')
 let calls, notices, app, storage, respond
-let pageStack, pageLoads, pageScrolls
+let pageStack, pageLoads, pageScrolls, shareMenus, copyUrlListeners
 const activity = { name: 'Test event', startDate: [2099, 12, 20], endDate: [2100, 1, 10], openTime: [11, 0], closeTime: [20, 0] }
 const booking = { id: '9007199254740993', bookingNo: 'TF-TEST', userName: '测试预约', userPhone: '13800138000', openid: 'test-openid', bookingDate: [2099, 12, 20], slotStartTime: [13, 0], slotEndTime: [14, 0], status: 0, createTime: [2099, 10, 27, 9, 30, 0] }
 const slots = [{ id: '9007199254740995', startTime: [13, 0], endTime: [14, 0], status: 0 }]
@@ -74,6 +74,8 @@ beforeEach(() => {
   pageStack = []
   pageLoads = []
   pageScrolls = []
+  shareMenus = []
+  copyUrlListeners = new Set()
   global.getApp = () => app
   global.getCurrentPages = () => pageStack
   respond = async (options) => {
@@ -98,6 +100,9 @@ beforeEach(() => {
     showToast: (options) => notices.push(options.title),
     showLoading() {}, hideLoading() {}, showModal() {},
     setNavigationBarTitle() {},
+    showShareMenu: options => shareMenus.push(options),
+    onCopyUrl: listener => copyUrlListeners.add(listener),
+    offCopyUrl: () => copyUrlListeners.clear(),
     pageScrollTo: (options) => pageScrolls.push(options),
     getImageInfo: ({src, success}) => success({path: src}),
     navigateTo(options) {
@@ -1641,6 +1646,79 @@ test('subpages entered without an opener or booking bootstrap return to the book
     await settlePages()
     assert.equal(notices.at(-1), '/pages/index/index')
   }
+})
+
+test('sharing from every page and booking view opens the public home with artwork instead of a private screenshot', () => {
+  for (const type of ['main', 'date', 'time', 'reservation']) {
+    const instance = mountPage(type)
+    for (const view of ['loading', 'main', 'date', 'time', 'bookings', 'success', 'error']) {
+      instance.setData({ view, activity: { name: 'Public event', coverUrl: 'https://example.com/cover.jpg', exhibitUrl: 'https://example.com/exhibit.jpg' },
+        name: booking.userName, phone: booking.userPhone, reservation: booking, bookings: [booking], selectedSlotId: slots[0].id })
+      assert.deepEqual(instance.onShareAppMessage({ from: 'menu' }), {
+        title: 'Public event', path: '/pages/index/index', imageUrl: 'https://example.com/cover.jpg'
+      }, `${type}: ${view}`)
+    }
+  }
+  assert.equal(calls.length, 0)
+})
+
+test('sharing works before activity loads and falls back to exhibit art when no cover is configured', () => {
+  const instance = page()
+  assert.deepEqual(instance.onShareAppMessage(), {
+    title: "Collector's Room 02", path: '/pages/index/index', imageUrl: '/assets/exhibition.jpg'
+  })
+  instance.setData({ activity: { nameEn: 'Public event', exhibitUrl: 'https://example.com/exhibit.jpg' } })
+  assert.deepEqual(instance.onShareAppMessage(), {
+    title: 'Public event', path: '/pages/index/index', imageUrl: 'https://example.com/exhibit.jpg'
+  })
+})
+
+test('each visible route enables only friend forwarding and copies only a public title with empty query', () => {
+  for (const type of ['main', 'date', 'time', 'reservation']) {
+    const instance = mountPage(type)
+    instance.setData({ activity: { name: 'Public event' }, phone: booking.userPhone, reservation: booking })
+    instance.onShow()
+    assert.deepEqual(shareMenus.at(-1), { menus: ['shareAppMessage'] })
+    assert.equal(instance.onShareTimeline, undefined)
+    assert.equal(copyUrlListeners.size, 1)
+    assert.deepEqual([...copyUrlListeners][0](), { title: 'Public event', query: '' })
+    instance.onHide()
+    assert.equal(copyUrlListeners.size, 0)
+    instance.onUnload()
+  }
+  assert.equal(calls.length, 0)
+})
+
+test('copy-link listeners follow native navigation, refresh their title and ignore late unloads from hidden pages', () => {
+  const form = page()
+  form.onShow()
+  form.onShow()
+  assert.equal(copyUrlListeners.size, 1)
+  form.setData({ activity: { name: 'Loaded event' } })
+  assert.deepEqual([...copyUrlListeners][0](), { title: 'Loaded event', query: '' })
+  form.onHide()
+  assert.equal(copyUrlListeners.size, 0)
+  const child = mountPage('time')
+  child.onShow()
+  form.onUnload()
+  assert.equal(copyUrlListeners.size, 1)
+  child.onHide()
+  assert.equal(copyUrlListeners.size, 0)
+  const next = page()
+  next.onShow()
+  child.onUnload()
+  assert.equal(copyUrlListeners.size, 1)
+  next.onUnload()
+  assert.equal(copyUrlListeners.size, 0)
+})
+
+test('clients missing optional share-menu or copy-link APIs can still show the booking page', () => {
+  delete wx.showShareMenu
+  delete wx.onCopyUrl
+  delete wx.offCopyUrl
+  const instance = page()
+  assert.doesNotThrow(() => { instance.onShow(); instance.onHide(); instance.onUnload() })
+  assert.equal(copyUrlListeners.size, 0)
 })
 
 test('all routes use native navigation and have no duplicate custom header or navigation offset', () => {
